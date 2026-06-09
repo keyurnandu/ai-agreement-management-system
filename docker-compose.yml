@@ -1,0 +1,31 @@
+# Optional: local cloud-like services to exercise the S3 + Postgres adapters.
+# Not required for local-first dev (which uses SQLite + the filesystem).
+# Usage: docker compose up -d   (see docs/CLOUD.md)
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: contract
+      POSTGRES_PASSWORD: contract
+      POSTGRES_DB: contract
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+
+volumes:
+  pgdata:
+  miniodata:

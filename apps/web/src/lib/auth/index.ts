@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
+import type { Provider } from "next-auth/providers";
 import { z } from "zod";
 import { authConfig } from "./config";
 import { verifyPassword } from "./password";
@@ -45,7 +46,19 @@ const credentialsProvider = Credentials({
  *
  * No other code changes — the session shape is identical.
  */
-const providers = [credentialsProvider];
+const providers: Provider[] = [credentialsProvider];
+// Switching to SSO is a config change: set AUTH_PROVIDER=oidc + OIDC_* in .env.
+// (OIDC users authenticate as VIEWER by default; JIT role provisioning is a follow-up.)
+if (env.AUTH_PROVIDER === "oidc" && env.OIDC_ISSUER) {
+  providers.push({
+    id: "sso",
+    name: "SSO",
+    type: "oidc",
+    issuer: env.OIDC_ISSUER,
+    clientId: env.OIDC_CLIENT_ID,
+    clientSecret: env.OIDC_CLIENT_SECRET,
+  });
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,

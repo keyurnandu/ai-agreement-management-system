@@ -1,5 +1,14 @@
 import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+  HeadObjectCommand,
+  ListObjectsV2Command,
+} from "@aws-sdk/client-s3";
+import { getSignedUrl as presign } from "@aws-sdk/s3-request-presigner";
 import { env, resolveLocalPath } from "@/env";
 
 /**
@@ -90,31 +99,73 @@ class LocalFsStorage implements StorageProvider {
 }
 
 class S3Storage implements StorageProvider {
-  // Interface-compatible stub. Enable by setting STORAGE_PROVIDER=s3 and wiring
-  // the S3 SDK + credentials in Phase 5. Until then it fails loudly so misconfig
-  // is obvious rather than silently writing nowhere.
-  private fail(): never {
-    throw new Error(
-      "S3Storage is not implemented yet. Set STORAGE_PROVIDER=local for local dev (S3 lands in Phase 5).",
+  // S3 (or any S3-compatible store, e.g. MinIO via S3_ENDPOINT). Same interface as
+  // LocalFsStorage, so switching is just STORAGE_PROVIDER=s3 + bucket/creds in .env.
+  private readonly client: S3Client;
+  private readonly bucket: string;
+
+  constructor() {
+    if (!env.S3_BUCKET) throw new Error("STORAGE_PROVIDER=s3 requires S3_BUCKET");
+    this.bucket = env.S3_BUCKET;
+    const creds =
+      process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY
+        ? {
+            credentials: {
+              accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+              secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+            },
+          }
+        : {};
+    this.client = new S3Client({
+      region: env.S3_REGION || "us-east-1",
+      ...(env.S3_ENDPOINT ? { endpoint: env.S3_ENDPOINT, forcePathStyle: true } : {}),
+      ...creds,
+    });
+  }
+
+  async put(key: string, data: Buffer | Uint8Array, contentType = "application/pdf"): Promise<PutResult> {
+    await this.client.send(
+      new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: Buffer.from(data), ContentType: contentType }),
     );
+    return { key, size: data.byteLength };
   }
-  async put(): Promise<PutResult> {
-    return this.fail();
+
+  async get(key: string): Promise<Buffer> {
+    const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    const bytes = await res.Body!.transformToByteArray();
+    return Buffer.from(bytes);
   }
-  async get(): Promise<Buffer> {
-    return this.fail();
+
+  async delete(key: string): Promise<void> {
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }
-  async delete(): Promise<void> {
-    return this.fail();
+
+  async exists(key: string): Promise<boolean> {
+    try {
+      await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
+      return true;
+    } catch {
+      return false;
+    }
   }
-  async exists(): Promise<boolean> {
-    return this.fail();
+
+  async list(prefix = ""): Promise<string[]> {
+    const out: string[] = [];
+    let token: string | undefined;
+    do {
+      const res = await this.client.send(
+        new ListObjectsV2Command({ Bucket: this.bucket, Prefix: prefix, ContinuationToken: token }),
+      );
+      for (const o of res.Contents ?? []) if (o.Key) out.push(o.Key);
+      token = res.IsTruncated ? res.NextContinuationToken : undefined;
+    } while (token);
+    return out;
   }
-  async list(): Promise<string[]> {
-    return this.fail();
-  }
-  async getSignedUrl(): Promise<string> {
-    return this.fail();
+
+  async getSignedUrl(key: string, expiresInSeconds = 900): Promise<string> {
+    return presign(this.client, new GetObjectCommand({ Bucket: this.bucket, Key: key }), {
+      expiresIn: expiresInSeconds,
+    });
   }
 }
 

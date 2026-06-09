@@ -226,3 +226,13 @@ it" and is kept distinct from the session-based app routes used by the web UI.
   keys + webhooks management. Verified: scopes (401/403), v1 list, OpenAPI, **signed
   webhook delivered with valid HMAC**. Build green (45 API routes). Remaining: Phase 5
   cloud switch (S3/Postgres/OIDC/hosted-LLM).
+- **2026-06-05** — **PHASE 5 (cloud switch) DONE.** Real S3Storage adapter
+  (@aws-sdk/client-s3 + presigner: put/get/delete/exists/list/getSignedUrl; S3_ENDPOINT +
+  forcePathStyle for MinIO; STORAGE_PROVIDER=s3). OIDC auth provider wired behind
+  AUTH_PROVIDER=oidc (Auth.js generic OIDC; credentials still available; OIDC users default
+  VIEWER). docs/CLOUD.md (per-adapter switch steps incl. Postgres provider edit + fresh
+  migrate) + docker-compose.yml (Postgres + MinIO for local cloud-like testing). AI already
+  pluggable. Build green; **local defaults verified intact** (credentials login, pages 200 —
+  S3/OIDC only activate via env). S3/Postgres/OIDC need real services to runtime-test (no
+  Docker/cloud locally) — documented. **ALL REQUESTED ROADMAP COMPLETE.** Vision delivered
+  end-to-end, local-first + cloud-ready.
