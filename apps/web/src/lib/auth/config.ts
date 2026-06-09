@@ -6,7 +6,8 @@ import type { NextAuthConfig } from "next-auth";
  * in ./index.ts. The `authorized` callback gates every matched route.
  */
 // Public (unauthenticated) areas. The signing ceremony is token-gated, not session-gated.
-const PUBLIC_PREFIXES = ["/login", "/api/health", "/api/auth", "/sign", "/api/sign"];
+// /api/v1 is the external API (API-key auth, enforced per-route) — not session-gated.
+const PUBLIC_PREFIXES = ["/login", "/api/health", "/api/auth", "/sign", "/api/sign", "/api/v1"];
 
 export const authConfig = {
   trustHost: true,

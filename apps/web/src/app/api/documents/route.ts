@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { storage } from "@/lib/adapters/storage";
 import { pdfEngine } from "@/lib/services/client";
 import { recordAudit } from "@/lib/audit";
+import { emitEvent } from "@/lib/webhooks";
 import { documentStorageKey } from "@/lib/documents";
 
 export const dynamic = "force-dynamic";
@@ -66,6 +67,7 @@ export async function POST(req: Request) {
     resourceId: doc.id,
     metadata: { filename: file.name, bytes: bytes.byteLength, pageCount },
   });
+  await emitEvent("document.uploaded", { documentId: doc.id, title: doc.title, pageCount });
 
   return NextResponse.json({ id: doc.id, title: doc.title, pageCount });
 }

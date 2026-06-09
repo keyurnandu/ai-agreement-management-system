@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { storage } from "@/lib/adapters/storage";
 import { pdfEngine, type StampItem } from "@/lib/services/client";
 import { recordAudit } from "@/lib/audit";
+import { emitEvent } from "@/lib/webhooks";
 import { canAccessDocument, documentStorageKey, latestVersion, loadVersionBytes } from "@/lib/documents";
 import type { Actor } from "@/lib/rbac";
 
@@ -137,5 +138,6 @@ export async function maybeFinalizeAgreement(agreementId: string): Promise<boole
     resourceId: agreementId,
     metadata: { signedVersion: newVersion, signers: signers.length },
   });
+  await emitEvent("agreement.completed", { agreementId, documentId: ag.documentId, signedVersion: newVersion });
   return true;
 }

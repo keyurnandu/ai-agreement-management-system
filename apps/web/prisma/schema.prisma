@@ -287,3 +287,29 @@ model AttributeValue {
   @@index([documentId])
   @@index([contractId])
 }
+
+// ── External API layer (Phase 6) ──────────────────────────────────────────────
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  name        String
+  prefix      String    @unique // public lookup id (also the displayed key prefix)
+  keyHash     String // sha256 of the full secret
+  scopes      Json? // string[] e.g. ["documents:read","agreements:read"]
+  active      Boolean   @default(true)
+  createdById String?
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+model WebhookSubscription {
+  id             String    @id @default(cuid())
+  url            String
+  events         Json? // string[] of event names, or ["*"]
+  secret         String // HMAC signing secret
+  active         Boolean   @default(true)
+  createdById    String?
+  lastStatus     Int?
+  lastDeliveryAt DateTime?
+  createdAt      DateTime  @default(now())
+}

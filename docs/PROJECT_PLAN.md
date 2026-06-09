@@ -215,3 +215,14 @@ it" and is kept distinct from the session-based app routes used by the web UI.
   examples, Save + Test). Nav link. Verified: grouped list, create w/ examples, Test →
   "60", toggle, page 200. Build green (35 API routes). Remaining: Phase 6 external API;
   Phase 5 cloud switch.
+- **2026-06-05** — **PHASE 6 (external API) DONE & verified.** ApiKey + WebhookSubscription
+  models. lib/apikey (cpk_ keys, sha256 hash, scopes, verifyApiKey/authorizeApi) +
+  lib/webhooks (emitEvent → signed POST with X-CP-Signature HMAC, records status).
+  Session admin API: /api/keys (GET/POST create→full key once/[id] DELETE), /api/webhooks
+  (GET/POST create→secret once/[id] DELETE), manager-gated. External /api/v1 (API-key +
+  scope): documents (list/[id]/attributes), agreements (list/[id]), openapi.json (public).
+  /api/v1 added to auth public prefixes. emitEvent wired at document.uploaded,
+  agreement.completed, attribute.extracted, contract.generated. Developer UI (/developer):
+  keys + webhooks management. Verified: scopes (401/403), v1 list, OpenAPI, **signed
+  webhook delivered with valid HMAC**. Build green (45 API routes). Remaining: Phase 5
+  cloud switch (S3/Postgres/OIDC/hosted-LLM).

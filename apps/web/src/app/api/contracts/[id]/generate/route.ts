@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { storage } from "@/lib/adapters/storage";
 import { pdfEngine } from "@/lib/services/client";
 import { recordAudit } from "@/lib/audit";
+import { emitEvent } from "@/lib/webhooks";
 import { roleAtLeast } from "@/lib/rbac";
 import { documentStorageKey } from "@/lib/documents";
 import { composeLines } from "@/lib/authoring";
@@ -52,6 +53,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
     resourceId: id,
     metadata: { documentId: doc.id, pages: info.pages },
   });
+  await emitEvent("contract.generated", { contractId: id, documentId: doc.id });
 
   return NextResponse.json({ documentId: doc.id });
 }

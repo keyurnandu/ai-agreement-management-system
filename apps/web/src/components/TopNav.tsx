@@ -21,6 +21,7 @@ export async function TopNav() {
         <Link href="/contracts">Contracts</Link>
         <Link href="/agreements">Agreements</Link>
         <Link href="/analytics">Analytics</Link>
+        <Link href="/developer">Developer</Link>
       </div>
       <div className="spacer" />
       {session?.user ? (

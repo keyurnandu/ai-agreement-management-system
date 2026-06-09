@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { recordAudit } from "@/lib/audit";
+import { emitEvent } from "@/lib/webhooks";
 import { pdfEngine, intelligence } from "@/lib/services/client";
 import { canAccessDocument, latestVersion, loadVersionBytes } from "@/lib/documents";
 
@@ -67,6 +68,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
     resourceId: id,
     metadata: { count: defs.length, provider },
   });
+  await emitEvent("attribute.extracted", { documentId: id, count: defs.length, provider });
 
   return NextResponse.json({ extracted: defs.length, provider });
 }
