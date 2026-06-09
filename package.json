@@ -1,0 +1,26 @@
+{
+  "name": "contract-platform",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Self-hostable Acrobat + DocuSign + contract-intelligence platform (local-first, cloud-ready).",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "npm run dev --workspace apps/web",
+    "build": "npm run build --workspace apps/web",
+    "db:generate": "npm run db:generate --workspace apps/web",
+    "db:migrate": "npm run db:migrate --workspace apps/web",
+    "db:seed": "npm run db:seed --workspace apps/web",
+    "db:studio": "npm run db:studio --workspace apps/web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

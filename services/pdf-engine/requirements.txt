@@ -1,0 +1,9 @@
+# PDF engine — FastAPI + PyMuPDF
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pymupdf>=1.24
+pyjwt>=2.9
+pydantic>=2.9
+pydantic-settings>=2.5
+python-dotenv>=1.0
+python-multipart>=0.0.18

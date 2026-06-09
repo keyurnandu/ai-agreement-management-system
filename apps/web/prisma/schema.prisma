@@ -1,0 +1,283 @@
+// Prisma schema — owned by apps/web (the system-of-record).
+//
+// Local dev uses SQLite. SQLite in Prisma does NOT support enums or scalar
+// lists, so "enum-like" columns are modelled as String with the allowed
+// values documented inline (and enforced in TypeScript via zod unions).
+//
+// To move to the cloud: change provider to "postgresql" and point
+// DATABASE_URL at Postgres. The model definitions are unchanged.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite" // cloud: "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String? // null when authenticated via OIDC/SSO
+  role         String   @default("VIEWER") // ADMIN | MANAGER | EDITOR | SIGNER | VIEWER
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  documents   Document[]   @relation("UploadedBy")
+  permissions Permission[]
+  recipients  Recipient[]
+  auditEvents AuditEvent[] @relation("ActorEvents")
+  annotations Annotation[] @relation("AnnotationAuthor")
+}
+
+model Document {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  status      String   @default("ACTIVE") // ACTIVE | ARCHIVED
+  ownerId     String
+  owner       User     @relation("UploadedBy", fields: [ownerId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  versions    DocumentVersion[]
+  agreement   Agreement?
+  permissions Permission[]
+  annotations Annotation[]
+
+  @@index([ownerId])
+}
+
+model DocumentVersion {
+  id               String   @id @default(cuid())
+  documentId       String
+  document         Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  version          Int
+  storageKey       String // opaque key in the StorageProvider
+  contentType      String   @default("application/pdf")
+  byteSize         Int      @default(0)
+  pageCount        Int      @default(0)
+  originalFilename String?
+  checksum         String?
+  note             String? // what changed in this version (e.g. "rotated page 2")
+  createdById      String?
+  createdAt        DateTime @default(now())
+
+  @@unique([documentId, version])
+}
+
+model Agreement {
+  id          String    @id @default(cuid())
+  title       String
+  status      String    @default("DRAFT") // DRAFT | SENT | IN_PROGRESS | COMPLETED | DECLINED | VOIDED | EXPIRED
+  documentId  String    @unique
+  document    Document  @relation(fields: [documentId], references: [id])
+  ownerId     String
+  routingType String    @default("SEQUENTIAL") // SEQUENTIAL | PARALLEL
+  message     String?
+  expiresAt   DateTime?
+  sentAt      DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  recipients  Recipient[]
+  fields      Field[]
+  permissions Permission[]
+}
+
+model Recipient {
+  id           String    @id @default(cuid())
+  agreementId  String
+  agreement    Agreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  userId       String?
+  user         User?     @relation(fields: [userId], references: [id])
+  email        String
+  name         String?
+  role         String    @default("SIGNER") // SIGNER | APPROVER | CC
+  routingOrder Int       @default(1)
+  status       String    @default("PENDING") // PENDING | SENT | VIEWED | SIGNED | DECLINED
+  accessToken  String?   @unique // tokenized signing-link secret
+  signedAt     DateTime?
+  createdAt    DateTime  @default(now())
+
+  fields Field[]
+
+  @@index([agreementId])
+}
+
+model Field {
+  id          String     @id @default(cuid())
+  agreementId String
+  agreement   Agreement  @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  recipientId String?
+  recipient   Recipient? @relation(fields: [recipientId], references: [id])
+  type        String // SIGNATURE | INITIAL | DATE | TEXT | CHECKBOX
+  page        Int        @default(1)
+  x           Float
+  y           Float
+  width       Float
+  height      Float
+  value       String?
+  required    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+
+  @@index([agreementId])
+}
+
+model Permission {
+  id           String     @id @default(cuid())
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resourceType String // DOCUMENT | AGREEMENT
+  documentId   String?
+  document     Document?  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  agreementId  String?
+  agreement    Agreement? @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  level        String // VIEW | COMMENT | EDIT | MANAGE
+  createdAt    DateTime   @default(now())
+
+  @@index([userId])
+}
+
+model AuditEvent {
+  id           String   @id @default(cuid())
+  actorId      String?
+  actor        User?    @relation("ActorEvents", fields: [actorId], references: [id])
+  actorEmail   String?
+  action       String // e.g. "document.upload", "agreement.send", "auth.login"
+  resourceType String?
+  resourceId   String?
+  ip           String?
+  userAgent    String?
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  @@index([resourceType, resourceId])
+  @@index([createdAt])
+}
+
+model Annotation {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  versionId  String? // version the coordinates were authored against
+  page       Int      @default(1)
+  type       String // HIGHLIGHT | COMMENT | NOTE | STRIKEOUT | DRAWING
+  rect       Json? // {x,y,w,h} in PDF points (or list of quads)
+  color      String   @default("#ffd54f")
+  text       String?
+  authorId   String
+  author     User     @relation("AnnotationAuthor", fields: [authorId], references: [id])
+  resolved   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([documentId, page])
+}
+
+// ── Structured authoring (contracts-as-data) ──────────────────────────────────
+
+model ClauseLibraryEntry {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  title     String
+  category  String?
+  body      String // approved standard clause text
+  fallbacks Json? // [{ label, text, riskLevel }] pre-approved alternatives
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  templateClauses TemplateClause[]
+}
+
+model Template {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String?
+  variables   Json? // [{ key, label, type, required }]
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  clauses   TemplateClause[]
+  contracts Contract[]
+}
+
+model TemplateClause {
+  id         String             @id @default(cuid())
+  templateId String
+  template   Template           @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  clauseId   String
+  clause     ClauseLibraryEntry @relation(fields: [clauseId], references: [id])
+  order      Int                @default(1)
+  required   Boolean            @default(true)
+
+  @@index([templateId])
+}
+
+model Contract {
+  id          String    @id @default(cuid())
+  title       String
+  status      String    @default("DRAFT") // DRAFT | GENERATED | SENT
+  templateId  String?
+  template    Template? @relation(fields: [templateId], references: [id])
+  variables   Json?
+  documentId  String? // rendered Document.id (no FK; Document model untouched)
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  clauses ContractClause[]
+}
+
+model ContractClause {
+  id             String   @id @default(cuid())
+  contractId     String
+  contract       Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  order          Int      @default(1)
+  title          String
+  body           String
+  sourceClauseId String?
+  isDeviation    Boolean  @default(false)
+
+  @@index([contractId])
+}
+
+// ── Custom attributes & extraction (schema groundwork; execution in Phase 3) ──
+
+model AttributeDefinition {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  label     String
+  type      String   @default("TEXT") // TEXT | DATE | NUMBER | BOOLEAN | ENUM
+  prompt    String // natural-language extraction instruction
+  options   Json? // choices for ENUM
+  scope     String   @default("BOTH") // DOCUMENT | CONTRACT | BOTH
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  values AttributeValue[]
+}
+
+model AttributeValue {
+  id           String              @id @default(cuid())
+  definitionId String
+  definition   AttributeDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  documentId   String? // references Document.id (no FK)
+  contractId   String? // references Contract.id (no FK)
+  value        String?
+  confidence   Float?
+  source       String? // page / snippet the value came from
+  method       String              @default("AI") // AI | MANUAL
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  @@index([documentId])
+  @@index([contractId])
+}

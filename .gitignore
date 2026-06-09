@@ -1,0 +1,42 @@
+# ── Dependencies ─────────────────────────────────────
+node_modules/
+**/node_modules/
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.egg-info/
+
+# ── Build output ─────────────────────────────────────
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+
+# ── Environment / secrets ────────────────────────────
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+!**/.env.example
+
+# ── Local runtime data (storage adapter, sqlite, vectors) ──
+data/
+**/data/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# ── Misc ─────────────────────────────────────────────
+.DS_Store
+*.log
+npm-debug.log*
+.vscode/
+.idea/
+.pytest_cache/
+.ruff_cache/
+coverage/
