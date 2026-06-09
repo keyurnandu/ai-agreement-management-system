@@ -207,6 +207,11 @@ h2 {
   color: var(--text);
   background: var(--panel-2);
 }
+.nav .links a.active {
+  color: var(--text);
+  background: var(--panel-2);
+  font-weight: 600;
+}
 .nav .spacer {
   flex: 1;
 }

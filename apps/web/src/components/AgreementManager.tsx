@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState, type CSSProperties, type MouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import Link from "next/link";
 
 type Recipient = {
@@ -51,6 +59,9 @@ export function AgreementManager({ agreementId }: { agreementId: string }) {
   const [recipientId, setRecipientId] = useState("");
   const [fieldType, setFieldType] = useState("SIGNATURE");
   const [placeMode, setPlaceMode] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const placingRef = useRef(false);
+  const [drag, setDrag] = useState<{ id: string; x: number; y: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [email, setEmail] = useState("");
@@ -98,7 +109,9 @@ export function AgreementManager({ agreementId }: { agreementId: string }) {
   }
 
   async function onPlace(e: MouseEvent<HTMLDivElement>) {
-    if (!placeMode || !recipientId) return;
+    // Guard against a double-click registering as two placements.
+    if (!placeMode || !recipientId || placingRef.current) return;
+    placingRef.current = true;
     const box = e.currentTarget.getBoundingClientRect();
     const x = (e.clientX - box.left) / box.width;
     const y = (e.clientY - box.top) / box.height;
@@ -113,7 +126,43 @@ export function AgreementManager({ agreementId }: { agreementId: string }) {
       if (res.ok) await load();
     } finally {
       setBusy(false);
+      setTimeout(() => {
+        placingRef.current = false;
+      }, 350);
     }
+  }
+
+  async function deleteField(fieldId: string) {
+    await fetch(`/api/agreements/${agreementId}/fields/${fieldId}`, { method: "DELETE" });
+    await load();
+  }
+
+  function startDrag(e: ReactPointerEvent<HTMLDivElement>, f: Field) {
+    e.stopPropagation();
+    (e.target as HTMLDivElement).setPointerCapture(e.pointerId);
+    setDrag({ id: f.id, x: f.x, y: f.y });
+  }
+  function moveDrag(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!drag) return;
+    const box = containerRef.current?.getBoundingClientRect();
+    if (!box) return;
+    setDrag({
+      id: drag.id,
+      x: Math.max(0, Math.min(0.99, (e.clientX - box.left) / box.width)),
+      y: Math.max(0, Math.min(0.99, (e.clientY - box.top) / box.height)),
+    });
+  }
+  async function endDrag(e: ReactPointerEvent<HTMLDivElement>) {
+    e.stopPropagation();
+    if (!drag) return;
+    const d = drag;
+    setDrag(null);
+    await fetch(`/api/agreements/${agreementId}/fields/${d.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ x: d.x, y: d.y }),
+    });
+    await load();
   }
 
   async function send() {
@@ -215,13 +264,25 @@ export function AgreementManager({ agreementId }: { agreementId: string }) {
                 className={placeMode ? "btn" : "btn secondary"}
                 disabled={!recipientId}
                 onClick={() => setPlaceMode((v) => !v)}
+                title="Then click on the document to drop a field"
               >
-                {placeMode ? "Placing… (click page)" : "Place field"}
+                {placeMode ? "✓ Placing — click the doc" : "+ Place field"}
               </button>
             ) : null}
           </div>
           <div style={{ padding: 16, background: "#0a0e15", textAlign: "center" }}>
+            {placeMode ? (
+              <div className="pill" style={{ marginBottom: 10, color: "var(--accent)", borderColor: "var(--accent)" }}>
+                Click the document to place a <strong>{fieldType}</strong> for{" "}
+                {data.recipients.find((r) => r.id === recipientId)?.email ?? "—"}
+              </div>
+            ) : data.fields.length ? (
+              <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+                Drag a field to move it · click ✕ to remove
+              </div>
+            ) : null}
             <div
+              ref={containerRef}
               onClick={onPlace}
               style={{
                 position: "relative",
@@ -236,23 +297,60 @@ export function AgreementManager({ agreementId }: { agreementId: string }) {
                 alt={`page ${page}`}
                 style={{ display: "block", maxWidth: "100%", boxShadow: "0 4px 24px rgba(0,0,0,0.5)" }}
               />
-              {pageFields.map((f) => (
-                <div
-                  key={f.id}
-                  className="fieldtag"
-                  title={`${f.type} · ${data.recipients[recipIndex(f.recipientId)]?.email ?? "?"}`}
-                  style={{
-                    left: `${f.x * 100}%`,
-                    top: `${f.y * 100}%`,
-                    width: `${f.width * 100}%`,
-                    height: `${f.height * 100}%`,
-                    background: `${recipColor(f.recipientId)}cc`,
-                    border: `1px solid ${recipColor(f.recipientId)}`,
-                  }}
-                >
-                  {f.type}
-                </div>
-              ))}
+              {pageFields.map((f) => {
+                const live = drag && drag.id === f.id ? drag : f;
+                const dragging = drag?.id === f.id;
+                return (
+                  <div
+                    key={f.id}
+                    className="fieldtag"
+                    title={`${f.type} · ${data.recipients[recipIndex(f.recipientId)]?.email ?? "?"} — drag to move`}
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => startDrag(e, f)}
+                    onPointerMove={moveDrag}
+                    onPointerUp={endDrag}
+                    style={{
+                      left: `${live.x * 100}%`,
+                      top: `${live.y * 100}%`,
+                      width: `${f.width * 100}%`,
+                      height: `${f.height * 100}%`,
+                      background: `${recipColor(f.recipientId)}cc`,
+                      border: `1px solid ${recipColor(f.recipientId)}`,
+                      overflow: "visible",
+                      cursor: dragging ? "grabbing" : "grab",
+                      touchAction: "none",
+                    }}
+                  >
+                    {f.type}
+                    <button
+                      type="button"
+                      title="Remove field"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteField(f.id);
+                      }}
+                      style={{
+                        position: "absolute",
+                        top: -8,
+                        right: -8,
+                        width: 16,
+                        height: 16,
+                        borderRadius: "50%",
+                        background: "var(--red)",
+                        color: "#fff",
+                        border: "1px solid rgba(0,0,0,0.3)",
+                        cursor: "pointer",
+                        fontSize: 11,
+                        lineHeight: "13px",
+                        padding: 0,
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

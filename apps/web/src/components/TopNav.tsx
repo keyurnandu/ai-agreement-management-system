@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { auth, signOut } from "@/lib/auth";
+import { NavLinks } from "@/components/NavLinks";
 
 export async function TopNav() {
   const session = await auth();
@@ -14,15 +15,7 @@ export async function TopNav() {
       <Link href="/dashboard" className="brand" style={{ fontSize: 16 }}>
         contract-platform
       </Link>
-      <div className="links">
-        <Link href="/dashboard">Dashboard</Link>
-        <Link href="/documents">Documents</Link>
-        <Link href="/attributes">Attributes</Link>
-        <Link href="/contracts">Contracts</Link>
-        <Link href="/agreements">Agreements</Link>
-        <Link href="/analytics">Analytics</Link>
-        <Link href="/developer">Developer</Link>
-      </div>
+      <NavLinks />
       <div className="spacer" />
       {session?.user ? (
         <>
