@@ -218,9 +218,23 @@ export function AgreementManager({ agreementId }: { agreementId: string }) {
   const pageFields = data.fields.filter((f) => f.page === page);
   const tb: CSSProperties = { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" };
 
+  // Send-readiness: at least one signer/approver, and every one of them has >=1 field.
+  const fieldCount = (rid: string) => data.fields.filter((f) => f.recipientId === rid).length;
+  const signers = data.recipients.filter((r) => r.role !== "CC");
+  const signersMissing = signers.filter((r) => fieldCount(r.id) === 0);
+  const ready = signers.length > 0 && signersMissing.length === 0;
+  const sendBlocker =
+    data.recipients.length === 0
+      ? "Add a recipient to begin"
+      : signers.length === 0
+        ? "Add at least one signer"
+        : signersMissing.length
+          ? `Place a field for: ${signersMissing.map((r) => r.email).join(", ")}`
+          : null;
+
   return (
     <div>
-      <div className="row" style={{ margin: "8px 0 18px" }}>
+      <div className="row" style={{ margin: "8px 0 12px" }}>
         <div>
           <h1 style={{ marginBottom: 2 }}>{data.title}</h1>
           <p className="muted" style={{ fontSize: 13 }}>
@@ -229,15 +243,36 @@ export function AgreementManager({ agreementId }: { agreementId: string }) {
           </p>
         </div>
         {isDraft ? (
-          <button className="btn" disabled={busy} onClick={send}>
-            Send for signature
-          </button>
+          <div style={{ textAlign: "right" }}>
+            <button className="btn" disabled={busy || !ready} onClick={send} title={sendBlocker ?? "Send for signature"}>
+              Send for signature
+            </button>
+            <div style={{ fontSize: 11, marginTop: 4, color: sendBlocker ? "var(--amber)" : "var(--green)" }}>
+              {sendBlocker ? `⚠ ${sendBlocker}` : "✓ Ready to send"}
+            </div>
+          </div>
         ) : (
           <Link href={`/documents/${data.documentId}`} className="btn secondary">
             View document
           </Link>
         )}
       </div>
+
+      {isDraft ? (
+        <div className="row" style={{ marginBottom: 14, gap: 14, fontSize: 13, justifyContent: "flex-start" }}>
+          <span>
+            <span className="badge gray">1</span> Add recipients <strong>({data.recipients.length})</strong>
+          </span>
+          <span className="muted">→</span>
+          <span>
+            <span className="badge gray">2</span> Place fields <strong>({data.fields.length})</strong>
+          </span>
+          <span className="muted">→</span>
+          <span>
+            <span className="badge gray">3</span> Send
+          </span>
+        </div>
+      ) : null}
       {msg ? <p className="error" style={{ marginBottom: 12 }}>{msg}</p> : null}
 
       <div className="grid" style={{ gridTemplateColumns: "1fr 320px", gap: 16, alignItems: "start" }}>
@@ -360,7 +395,9 @@ export function AgreementManager({ agreementId }: { agreementId: string }) {
           <div className="card">
             <h2>Recipients</h2>
             <div className="grid" style={{ gap: 8 }}>
-              {data.recipients.length === 0 ? <p className="muted">None yet.</p> : null}
+              {data.recipients.length === 0 ? (
+                <p className="muted" style={{ fontSize: 13 }}>No recipients yet — add one below to begin.</p>
+              ) : null}
               {data.recipients.map((r) => {
                 const count = data.fields.filter((f) => f.recipientId === r.id).length;
                 return (
@@ -371,6 +408,9 @@ export function AgreementManager({ agreementId }: { agreementId: string }) {
                       <div className="muted" style={{ fontSize: 11 }}>
                         {r.role} · order {r.routingOrder} · {r.status} · {count} field(s)
                       </div>
+                      {isDraft && r.role !== "CC" && count === 0 ? (
+                        <div style={{ fontSize: 11, color: "var(--amber)" }}>⚠ needs at least one field</div>
+                      ) : null}
                       {!isDraft && r.token ? (
                         <div style={{ marginTop: 4 }}>
                           <a href={`${origin}/sign/${r.token}`} target="_blank" rel="noreferrer" style={{ fontSize: 11 }}>

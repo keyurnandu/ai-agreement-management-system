@@ -171,42 +171,42 @@ export function PdfViewer({
     <div className="card" style={{ padding: 0, overflow: "hidden" }}>
       <div className="row" style={{ padding: 12, borderBottom: "1px solid var(--border)", ...tb }}>
         <div style={tb}>
-          <button className="btn secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+          <button className="btn secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} title="Previous page">
             ‹
           </button>
           <span className="muted" style={{ minWidth: 92, textAlign: "center" }}>
             page {page} / {pageCount}
           </span>
-          <button className="btn secondary" disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)}>
+          <button className="btn secondary" disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)} title="Next page">
             ›
           </button>
-          <span style={{ width: 8 }} />
-          <button className="btn secondary" onClick={() => setDpi((d) => Math.max(72, d - 36))}>
+          <span style={{ width: 1, height: 22, background: "var(--border)", margin: "0 4px" }} />
+          <button className="btn secondary" onClick={() => setDpi((d) => Math.max(72, d - 36))} title="Zoom out">
             −
           </button>
-          <span className="muted">{Math.round((dpi / 144) * 100)}%</span>
-          <button className="btn secondary" onClick={() => setDpi((d) => Math.min(288, d + 36))}>
+          <span className="muted" style={{ minWidth: 40, textAlign: "center" }}>{Math.round((dpi / 144) * 100)}%</span>
+          <button className="btn secondary" onClick={() => setDpi((d) => Math.min(288, d + 36))} title="Zoom in">
             +
           </button>
         </div>
         <div style={tb}>
-          <button className="btn secondary" onClick={() => setTab("page")}>
+          <button className={tab === "page" ? "btn" : "btn secondary"} onClick={() => setTab("page")} title="Document pages">
             Page
           </button>
-          <button className="btn secondary" onClick={loadText}>
+          <button className={tab === "text" ? "btn" : "btn secondary"} onClick={loadText} title="Extracted text">
             Text
           </button>
-          <button className="btn secondary" onClick={() => setTab("comments")}>
+          <button className={tab === "comments" ? "btn" : "btn secondary"} onClick={() => setTab("comments")} title="Comments & annotations">
             Comments ({annotations.length})
           </button>
           {canEdit ? (
-            <button className="btn secondary" onClick={loadForm}>
+            <button className={tab === "form" ? "btn" : "btn secondary"} onClick={loadForm} title="Fill form fields">
               Form
             </button>
           ) : null}
           {fileUrl ? (
-            <a className="btn secondary" href={fileUrl} target="_blank" rel="noreferrer">
-              Open original
+            <a className="btn secondary" href={fileUrl} target="_blank" rel="noreferrer" title="Open the original PDF in a new tab">
+              Open ↗
             </a>
           ) : null}
         </div>
@@ -225,12 +225,14 @@ export function PdfViewer({
           ) : null}
           {canEdit ? (
             <>
+              <span style={{ width: 1, height: 22, background: "var(--border)", margin: "0 2px" }} />
               <span className="muted" style={{ fontSize: 12 }}>
-                page {page}:
+                Edit page {page}:
               </span>
               <button
                 className="btn secondary"
                 disabled={busy}
+                title="Rotate this page 90° (saves a new version)"
                 onClick={() => applyOp({ op: "rotate", pages: [page], degrees: 90 }, `rotated page ${page}`)}
               >
                 ⟳ Rotate
@@ -238,6 +240,7 @@ export function PdfViewer({
               <button
                 className="btn secondary"
                 disabled={busy || pageCount <= 1}
+                title="Delete this page (saves a new version)"
                 onClick={() => {
                   if (confirm(`Delete page ${page}? This creates a new version.`)) {
                     applyOp({ op: "delete", pages: [page] }, `deleted page ${page}`);
