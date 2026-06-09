@@ -92,7 +92,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
         </div>
       </div>
       <div style={{ marginTop: 16 }}>
-        <InsightsPanel documentId={doc.id} />
+        <InsightsPanel documentId={doc.id} versions={doc.versions.map((v) => v.version)} />
       </div>
     </div>
   );

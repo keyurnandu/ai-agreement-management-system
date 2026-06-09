@@ -80,3 +80,41 @@ class AIProvider(ABC):
             lines = [ln for ln in (c.text or "").strip().splitlines() if ln.strip()]
             results.append({"key": a.get("key"), "value": (lines[0][:300] if lines else "N/A"), "confidence": None})
         return results
+
+    @staticmethod
+    def _json(raw: str, key: str, default):
+        import json
+
+        s, e = raw.find("{"), raw.rfind("}")
+        if s != -1 and e != -1:
+            try:
+                return json.loads(raw[s : e + 1]).get(key, default)
+            except Exception:  # noqa: BLE001
+                pass
+        return default
+
+    async def classify(self, text: str) -> dict:
+        system = (
+            "You are a contract analyst. Split the contract into its clauses and classify each. "
+            'Return STRICT JSON: {"clauses":[{"title","category","risk":"low|medium|high","text"}]}. No prose.'
+        )
+        c = await self.complete(f"Contract:\n{text[:8000]}", system, max_tokens=1200)
+        return {"clauses": self._json(c.text or "", "clauses", []), "provider": self.name}
+
+    async def redline(self, text: str, standards: list[dict]) -> dict:
+        std = "\n".join(f"- {s.get('title')}: {s.get('text')}" for s in standards) or "(none provided)"
+        system = (
+            "You are a contract negotiator. Compare the contract against the company's standard clauses. "
+            "For each standard, decide MATCH, DEVIATES, or MISSING, with a short note and a suggested edit. "
+            'Return STRICT JSON: {"findings":[{"clause","status","note","suggestion"}]}.'
+        )
+        c = await self.complete(f"STANDARD CLAUSES:\n{std}\n\nCONTRACT:\n{text[:7000]}", system, max_tokens=1200)
+        return {"findings": self._json(c.text or "", "findings", []), "provider": self.name}
+
+    async def diff(self, before: str, after: str) -> dict:
+        system = (
+            "Summarize the substantive changes from BEFORE to AFTER in a contract as bullet points, "
+            "focusing on legal/financial impact."
+        )
+        c = await self.complete(f"BEFORE:\n{before[:4000]}\n\nAFTER:\n{after[:4000]}", system, max_tokens=500)
+        return {"summary": c.text, "provider": self.name}

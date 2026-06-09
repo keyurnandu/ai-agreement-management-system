@@ -6,30 +6,25 @@ import { canAccessDocument, getDocumentText } from "@/lib/documents";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const actor = { id: session.user.id, role: session.user.role };
 
   const { id } = await ctx.params;
-  if (!(await canAccessDocument(actor, id, "VIEW"))) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
-
-  const body = (await req.json()) as { question?: string };
-  if (!body.question?.trim()) return NextResponse.json({ error: "question required" }, { status: 400 });
+  if (!(await canAccessDocument(actor, id, "VIEW"))) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const text = await getDocumentText(id);
   if (text === null) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const result = await intelligence.ask(text, body.question, id);
+  const result = await intelligence.classify(text);
   await recordAudit({
-    action: "document.ask",
+    action: "document.classify",
     actorId: actor.id,
     actorEmail: session.user.email,
     resourceType: "DOCUMENT",
     resourceId: id,
-    metadata: { question: body.question.slice(0, 120) },
+    metadata: { clauses: result.clauses.length },
   });
   return NextResponse.json(result);
 }

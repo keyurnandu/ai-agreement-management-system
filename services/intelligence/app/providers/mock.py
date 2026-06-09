@@ -87,3 +87,52 @@ class MockProvider(AIProvider):
             m = re.search(r"laws of ([A-Z][\w .,'\-]{2,40})", text)
             return m.group(1).strip(" .") if m else "N/A"
         return "N/A"
+
+    @staticmethod
+    def _classify_block(b: str) -> tuple[str, str]:
+        low = b.lower()
+        if "indemnif" in low:
+            return ("Indemnification", "high")
+        if "unlimited" in low or "uncapped" in low:
+            return ("Liability", "high")
+        if "terminat" in low:
+            return ("Termination", "medium")
+        if "confidential" in low:
+            return ("Confidentiality", "low")
+        if "govern" in low:
+            return ("Governing law", "low")
+        if "payment" in low or "fee" in low:
+            return ("Payment", "medium")
+        if "renew" in low:
+            return ("Renewal", "medium")
+        return ("General", "low")
+
+    async def classify(self, text: str) -> dict:
+        blocks = [b.strip() for b in re.split(r"\n\s*\n", text or "") if b.strip()]
+        clauses = []
+        for b in blocks[:30]:
+            cat, risk = self._classify_block(b)
+            first = b.split(".")[0].strip()
+            title = (first[:48] if first else cat)
+            clauses.append({"title": title, "category": cat, "risk": risk, "text": b[:200]})
+        return {"clauses": clauses, "provider": self.name}
+
+    async def redline(self, text: str, standards: list[dict]) -> dict:
+        low = (text or "").lower()
+        findings = []
+        for s in standards:
+            title = s.get("title", "") or ""
+            stext = s.get("text", "") or ""
+            kw = next((w for w in title.lower().split() if len(w) > 3), title.lower())
+            if kw and kw in low:
+                findings.append({"clause": title, "status": "PRESENT", "note": "Related clause found; review wording vs standard.", "suggestion": ""})
+            else:
+                findings.append({"clause": title, "status": "MISSING", "note": "No matching clause detected.", "suggestion": f"Add standard language: {stext[:140]}"})
+        return {"findings": findings, "provider": self.name}
+
+    async def diff(self, before: str, after: str) -> dict:
+        delta = len(after) - len(before)
+        return {
+            "summary": f"[mock] Length change {delta:+d} chars ({len(before)} -> {len(after)}). Set AI_PROVIDER for a real change summary.",
+            "provider": self.name,
+        }

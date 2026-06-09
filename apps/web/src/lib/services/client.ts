@@ -261,6 +261,28 @@ export const intelligence = {
     }),
   analyze: (text: string) =>
     call<AnalyzeResult>(env.INTELLIGENCE_URL, "/ai/analyze", { method: "POST", body: { text }, scope: "analyze" }),
-  ask: (text: string, question: string) =>
-    call<AskResult>(env.INTELLIGENCE_URL, "/ai/ask", { method: "POST", body: { text, question }, scope: "ask" }),
+  ask: (text: string, question: string, docId?: string) =>
+    call<AskResult>(env.INTELLIGENCE_URL, "/ai/ask", {
+      method: "POST",
+      body: { text, question, doc_id: docId },
+      scope: "ask",
+    }),
+  classify: (text: string) =>
+    call<{ provider: string; clauses: { title: string; category: string; risk: string; text: string }[] }>(
+      env.INTELLIGENCE_URL,
+      "/ai/clauses",
+      { method: "POST", body: { text }, scope: "classify" },
+    ),
+  redline: (text: string, standards: { title: string; text: string }[]) =>
+    call<{ provider: string; findings: { clause: string; status: string; note: string; suggestion: string }[] }>(
+      env.INTELLIGENCE_URL,
+      "/ai/redline",
+      { method: "POST", body: { text, standards }, scope: "redline" },
+    ),
+  diff: (before: string, after: string) =>
+    call<{ provider: string; summary: string }>(env.INTELLIGENCE_URL, "/ai/diff", {
+      method: "POST",
+      body: { before, after },
+      scope: "diff",
+    }),
 };

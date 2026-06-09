@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from ..core import vectorstore
+from ..core.embeddings import get_embedder
 from ..core.rag import chunk_text, cosine
 from ..core.security import verify_service_token
 from ..providers.factory import AVAILABLE, get_provider
@@ -45,6 +47,31 @@ class AskRequest(BaseModel):
     text: str
     question: str
     top_k: int = 4
+    doc_id: str | None = None
+
+
+class IndexRequest(BaseModel):
+    doc_id: str
+    text: str
+
+
+class ClassifyRequest(BaseModel):
+    text: str
+
+
+class StandardClause(BaseModel):
+    title: str
+    text: str
+
+
+class RedlineRequest(BaseModel):
+    text: str
+    standards: list[StandardClause] = []
+
+
+class DiffRequest(BaseModel):
+    before: str
+    after: str
 
 
 CONTRACT_SUMMARY_SYSTEM = (
@@ -95,22 +122,33 @@ async def analyze(req: AnalyzeRequest) -> dict:
     return await get_provider().analyze(req.text)
 
 
-@router.post("/ask", summary="RAG Q&A over the document text with citations")
+@router.post("/ask", summary="RAG Q&A with citations (persistent on-disk index when doc_id given)")
 async def ask(req: AskRequest) -> dict:
     provider = get_provider()
-    chunks = chunk_text(req.text)
-    if not chunks:
-        return {"answer": "The document has no extractable text.", "citations": [], "provider": provider.name}
+    embedder = get_embedder()
 
-    vectors = await provider.embed(chunks + [req.question])
-    qv = vectors[-1]
+    cached = vectorstore.load(req.doc_id) if req.doc_id else None
+    if cached and cached.get("chunks"):
+        chunks = cached["chunks"]
+        cvs = cached["vectors"]
+        indexed = True
+    else:
+        chunks = chunk_text(req.text)
+        if not chunks:
+            return {"answer": "The document has no extractable text.", "citations": [], "provider": provider.name}
+        cvs = await embedder.embed(chunks)
+        if req.doc_id:
+            vectorstore.save(req.doc_id, chunks, cvs)
+        indexed = False
+
+    qv = (await embedder.embed([req.question]))[0]
     scored = sorted(
-        ((cosine(qv, vectors[i]), i) for i in range(len(chunks))),
+        ((cosine(qv, cvs[i]), i) for i in range(len(chunks))),
         key=lambda s: s[0],
         reverse=True,
     )[: max(1, req.top_k)]
 
-    context = "\n\n".join(f"[{rank + 1}] {chunks[idx]}" for rank, (_score, idx) in enumerate(scored))
+    context = "\n\n".join(f"[{rank + 1}] {chunks[idx]}" for rank, (_s, idx) in enumerate(scored))
     system = (
         "Answer the question using ONLY the provided context excerpts. Cite excerpt numbers like [1]. "
         "If the answer is not in the context, say you don't know."
@@ -120,4 +158,36 @@ async def ask(req: AskRequest) -> dict:
         {"n": rank + 1, "score": round(score, 3), "text": chunks[idx][:240]}
         for rank, (score, idx) in enumerate(scored)
     ]
-    return {"answer": c.text, "citations": citations, "provider": provider.name}
+    return {
+        "answer": c.text,
+        "citations": citations,
+        "provider": provider.name,
+        "embedder": embedder.name,
+        "indexed": indexed,
+    }
+
+
+@router.post("/index", summary="Build/refresh the on-disk vector index for a document")
+async def index(req: IndexRequest) -> dict:
+    embedder = get_embedder()
+    chunks = chunk_text(req.text)
+    if not chunks:
+        return {"chunks": 0}
+    vectors = await embedder.embed(chunks)
+    vectorstore.save(req.doc_id, chunks, vectors)
+    return {"chunks": len(chunks), "embedder": embedder.name}
+
+
+@router.post("/clauses", summary="Split a contract into clauses and classify each")
+async def clauses(req: ClassifyRequest) -> dict:
+    return await get_provider().classify(req.text)
+
+
+@router.post("/redline", summary="Compare a contract against standard clauses -> findings")
+async def redline(req: RedlineRequest) -> dict:
+    return await get_provider().redline(req.text, [s.model_dump() for s in req.standards])
+
+
+@router.post("/diff", summary="Summarize substantive changes between two versions")
+async def diff(req: DiffRequest) -> dict:
+    return await get_provider().diff(req.before, req.after)

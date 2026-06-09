@@ -236,3 +236,15 @@ it" and is kept distinct from the session-based app routes used by the web UI.
   S3/OIDC only activate via env). S3/Postgres/OIDC need real services to runtime-test (no
   Docker/cloud locally) — documented. **ALL REQUESTED ROADMAP COMPLETE.** Vision delivered
   end-to-end, local-first + cloud-ready.
+- **2026-06-05** — Pushed to GitHub: origin = github.com/keyurnandu/ai-agreement-management-system
+  (main, 4 commits).
+- **2026-06-09** — **Intelligence layer completed & verified.** (1) Real model: verified a
+  real summary via local **Ollama (qwen2.5:0.5b)** through our provider abstraction.
+  (2) **Persistent RAG**: embeddings.py (EMBEDDING_PROVIDER mock/openai/ollama, separate
+  from chat → works with Claude) + core/vectorstore.py (on-disk index at VECTOR_STORE_PATH);
+  /ai/index + /ai/ask persists & reuses per doc_id (verified indexed False→True).
+  (3) **Clause classification** (/ai/clauses), **redline/negotiation** vs the clause library
+  (/ai/redline → 6 findings PRESENT/MISSING), **version diff** (/ai/diff) — provider
+  methods (LLM base + mock heuristics) + web routes (/api/documents/[id]/classify, /redline,
+  /diff) + InsightsPanel UI (Analyze/Classify/Redline/Compare-versions/Ask). Build green.
+  Note: mock clause-split is coarse (real models classify better). 56 API routes.
