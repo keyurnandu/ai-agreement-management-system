@@ -252,15 +252,21 @@ model ContractClause {
 // ── Custom attributes & extraction (schema groundwork; execution in Phase 3) ──
 
 model AttributeDefinition {
-  id        String   @id @default(cuid())
-  key       String   @unique
-  label     String
-  type      String   @default("TEXT") // TEXT | DATE | NUMBER | BOOLEAN | ENUM
-  prompt    String // natural-language extraction instruction
-  options   Json? // choices for ENUM
-  scope     String   @default("BOTH") // DOCUMENT | CONTRACT | BOTH
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
+  id                String   @id @default(cuid())
+  key               String   @unique
+  label             String
+  group             String? // attribute group (folder) for the admin list
+  type              String   @default("TEXT") // TEXT | DATE | NUMBER | BOOLEAN | ENUM
+  documentType      String? // restrict extraction to a document type
+  mode              String   @default("STRICT") // STRICT (verbatim) | FLEXIBLE (infer)
+  prompt            String // natural-language extraction instruction
+  options           Json? // choices for ENUM
+  inclusionExamples Json? // string[] of positive examples
+  exclusionExamples Json? // string[] of negative examples
+  scope             String   @default("BOTH") // DOCUMENT | CONTRACT | BOTH
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @default(now()) @updatedAt
 
   values AttributeValue[]
 }

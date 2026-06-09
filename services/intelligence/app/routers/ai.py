@@ -27,6 +27,9 @@ class AttributeSpec(BaseModel):
     label: str | None = None
     type: str | None = "TEXT"
     prompt: str | None = ""
+    mode: str | None = "STRICT"
+    inclusion: list[str] = []
+    exclusion: list[str] = []
 
 
 class ExtractRequest(BaseModel):

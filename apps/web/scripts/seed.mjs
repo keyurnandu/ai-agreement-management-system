@@ -70,10 +70,10 @@ const TEMPLATE = {
 };
 
 const ATTRIBUTES = [
-  { key: "effective_date", label: "Effective Date", type: "DATE", prompt: "Extract the effective or commencement date of this agreement; return an ISO date.", scope: "BOTH" },
-  { key: "governing_law", label: "Governing Law", type: "TEXT", prompt: "Which jurisdiction's law governs this agreement?", scope: "BOTH" },
-  { key: "term_months", label: "Term (months)", type: "NUMBER", prompt: "What is the duration/term of this agreement, in months?", scope: "BOTH" },
-  { key: "auto_renewal", label: "Auto-renewal", type: "BOOLEAN", prompt: "Does this agreement automatically renew? Answer true or false.", scope: "BOTH" },
+  { key: "effective_date", label: "Effective Date", group: "Contract basics", type: "DATE", mode: "FLEXIBLE", prompt: "Extract the effective or commencement date of this agreement; return an ISO date.", scope: "BOTH" },
+  { key: "governing_law", label: "Governing Law", group: "Contract basics", type: "TEXT", mode: "STRICT", prompt: "Which jurisdiction's law governs this agreement?", scope: "BOTH" },
+  { key: "term_months", label: "Term (months)", group: "Contract basics", type: "NUMBER", mode: "FLEXIBLE", prompt: "What is the duration/term of this agreement, in months?", scope: "BOTH" },
+  { key: "auto_renewal", label: "Auto-renewal", group: "Renewal", type: "BOOLEAN", mode: "FLEXIBLE", prompt: "Does this agreement automatically renew? Answer true or false.", scope: "BOTH" },
 ];
 
 async function seedAuthoring() {
@@ -99,8 +99,8 @@ async function seedAuthoring() {
   for (const a of ATTRIBUTES) {
     await prisma.attributeDefinition.upsert({
       where: { key: a.key },
-      update: { label: a.label, type: a.type, prompt: a.prompt, scope: a.scope, active: true },
-      create: { key: a.key, label: a.label, type: a.type, prompt: a.prompt, scope: a.scope },
+      update: { label: a.label, group: a.group, type: a.type, mode: a.mode, prompt: a.prompt, scope: a.scope, active: true },
+      create: { key: a.key, label: a.label, group: a.group, type: a.type, mode: a.mode, prompt: a.prompt, scope: a.scope },
     });
   }
   console.log(`  - ${CLAUSES.length} clauses, template '${TEMPLATE.key}', ${ATTRIBUTES.length} attribute defs`);

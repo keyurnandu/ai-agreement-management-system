@@ -17,6 +17,7 @@ export async function TopNav() {
       <div className="links">
         <Link href="/dashboard">Dashboard</Link>
         <Link href="/documents">Documents</Link>
+        <Link href="/attributes">Attributes</Link>
         <Link href="/contracts">Contracts</Link>
         <Link href="/agreements">Agreements</Link>
         <Link href="/analytics">Analytics</Link>

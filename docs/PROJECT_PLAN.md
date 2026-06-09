@@ -203,3 +203,15 @@ it" and is kept distinct from the session-based app routes used by the web UI.
   **Phases 0–4 + e-sign polish + structured authoring + attribute extraction + AI insights
   ALL DONE.** Remaining: attribute-UI upgrade (per reference); Phase 6 external API;
   Phase 5 cloud switch. Still uncommitted to git.
+- **2026-06-05** — **git: initial commit 296de84** (Phases 0-4) on main.
+- **2026-06-05** — **Attribute-UI upgrade DONE & verified** (per Acrobat-Analyzer
+  reference). Schema: AttributeDefinition + group/documentType/mode(STRICT|FLEXIBLE)/
+  inclusionExamples/exclusionExamples/updatedAt. API: /api/attributes (GET grouped,
+  POST), /api/attributes/[id] (PATCH + enable toggle), /api/attributes/test (run one
+  attribute vs sample text/doc → value). Extraction wiring: mode + examples flow into
+  intelligence /extract; base.extract prompt uses strict/flexible + inclusion/exclusion.
+  UI: two-pane /attributes (AttributesAdmin) — grouped list w/ enable toggle + create/edit
+  form (name/group/type/document-type/mode/description, Advanced inclusion+exclusion
+  examples, Save + Test). Nav link. Verified: grouped list, create w/ examples, Test →
+  "60", toggle, page 200. Build green (35 API routes). Remaining: Phase 6 external API;
+  Phase 5 cloud switch.

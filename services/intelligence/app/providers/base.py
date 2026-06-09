@@ -58,12 +58,25 @@ class AIProvider(ABC):
         )
         results: list[dict] = []
         for a in attributes:
-            prompt = (
-                f"Field: {a.get('label') or a.get('key')}\n"
-                f"Type: {a.get('type', 'TEXT')}\n"
-                f"Instruction: {a.get('prompt', '')}\n\nCONTRACT TEXT:\n{text[:6000]}"
-            )
-            c = await self.complete(prompt, system, max_tokens=120)
+            mode = (a.get("mode") or "STRICT").upper()
+            inc = a.get("inclusion") or []
+            exc = a.get("exclusion") or []
+            parts = [
+                f"Field: {a.get('label') or a.get('key')}",
+                f"Type: {a.get('type', 'TEXT')}",
+                "Mode: " + (
+                    "STRICT — return the value verbatim from the text"
+                    if mode == "STRICT"
+                    else "FLEXIBLE — infer/normalize even if not stated verbatim"
+                ),
+                f"Instruction: {a.get('prompt', '')}",
+            ]
+            if inc:
+                parts.append("Examples of correct values: " + "; ".join(str(x) for x in inc))
+            if exc:
+                parts.append("Do NOT return values like: " + "; ".join(str(x) for x in exc))
+            parts.append("\nCONTRACT TEXT:\n" + text[:6000])
+            c = await self.complete("\n".join(parts), system, max_tokens=120)
             lines = [ln for ln in (c.text or "").strip().splitlines() if ln.strip()]
             results.append({"key": a.get("key"), "value": (lines[0][:300] if lines else "N/A"), "confidence": None})
         return results

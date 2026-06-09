@@ -242,7 +242,18 @@ export interface AskResult {
 
 export const intelligence = {
   health: () => call<HealthResponse>(env.INTELLIGENCE_URL, "/health", { method: "GET", scope: "health" }),
-  extract: (text: string, attributes: { key: string; label?: string; type?: string; prompt?: string }[]) =>
+  extract: (
+    text: string,
+    attributes: {
+      key: string;
+      label?: string;
+      type?: string;
+      prompt?: string;
+      mode?: string;
+      inclusion?: string[];
+      exclusion?: string[];
+    }[],
+  ) =>
     call<{ provider: string; values: ExtractedAttribute[] }>(env.INTELLIGENCE_URL, "/ai/extract", {
       method: "POST",
       body: { text, attributes },

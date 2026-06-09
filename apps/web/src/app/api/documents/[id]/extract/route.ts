@@ -31,7 +31,15 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
 
   const { provider, values } = await intelligence.extract(
     text,
-    defs.map((d) => ({ key: d.key, label: d.label, type: d.type, prompt: d.prompt })),
+    defs.map((d) => ({
+      key: d.key,
+      label: d.label,
+      type: d.type,
+      prompt: d.prompt,
+      mode: d.mode,
+      inclusion: (d.inclusionExamples as string[] | null) ?? [],
+      exclusion: (d.exclusionExamples as string[] | null) ?? [],
+    })),
   );
   const byKey = new Map(values.map((v) => [v.key, v]));
 
