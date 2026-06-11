@@ -10,6 +10,8 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { RemoveButton } from "@/components/RemoveButton";
 
 type Recipient = {
   id: string;
@@ -25,6 +27,7 @@ type Field = {
   id: string;
   recipientId: string | null;
   type: string;
+  label: string | null;
   page: number;
   x: number;
   y: number;
@@ -54,6 +57,7 @@ const DEFAULT_SIZE: Record<string, { w: number; h: number }> = {
 const COLORS = ["#4f8cff", "#34d399", "#fbbf24", "#f472b6", "#a78bfa"];
 
 export function AgreementManager({ agreementId }: { agreementId: string }) {
+  const router = useRouter();
   const [data, setData] = useState<Data | null>(null);
   const [page, setPage] = useState(1);
   const [recipientId, setRecipientId] = useState("");
@@ -84,6 +88,8 @@ export function AgreementManager({ agreementId }: { agreementId: string }) {
 
   if (!data) return <p className="muted">Loading…</p>;
   const isDraft = data.status === "DRAFT";
+  const canVoid = ["SENT", "IN_PROGRESS", "COMPLETED"].includes(data.status);
+  const canDelete = ["DRAFT", "VOIDED", "DECLINED", "EXPIRED"].includes(data.status);
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
   async function addRecipient() {
@@ -165,6 +171,22 @@ export function AgreementManager({ agreementId }: { agreementId: string }) {
     await load();
   }
 
+  async function autoPlace() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch(`/api/agreements/${agreementId}/fields/auto`, { method: "POST" });
+      if (res.ok) {
+        await load();
+        setMsg("Standard signature blocks placed on the signature page.");
+      } else {
+        setMsg(((await res.json()) as { error?: string }).error ?? "Auto-place failed");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function send() {
     setBusy(true);
     setMsg(null);
@@ -213,15 +235,44 @@ export function AgreementManager({ agreementId }: { agreementId: string }) {
     }
   }
 
+  async function voidAgreement() {
+    if (!data) return;
+    if (
+      !window.confirm(
+        `Void "${data.title}"? Signing links will stop working. You can then delete the linked deal if needed.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch(`/api/agreements/${agreementId}/void`, { method: "POST", body: "{}" });
+      if (res.ok) {
+        await load();
+        setMsg("Agreement voided.");
+      } else {
+        setMsg(((await res.json()) as { error?: string }).error ?? "Void failed");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const recipIndex = (rid: string | null) => data.recipients.findIndex((r) => r.id === rid);
   const recipColor = (rid: string | null) => COLORS[(Math.max(0, recipIndex(rid)) % COLORS.length)];
   const pageFields = data.fields.filter((f) => f.page === page);
   const tb: CSSProperties = { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" };
 
-  // Send-readiness: at least one signer/approver, and every one of them has >=1 field.
-  const fieldCount = (rid: string) => data.fields.filter((f) => f.recipientId === rid).length;
+  // Send-readiness: every signer has signature + name + title + date.
   const signers = data.recipients.filter((r) => r.role !== "CC");
-  const signersMissing = signers.filter((r) => fieldCount(r.id) === 0);
+  const signerReady = (rid: string) => {
+    const mine = data.fields.filter((f) => f.recipientId === rid);
+    const has = (type: string, label: string) =>
+      mine.some((f) => f.type === type && f.label === label && f.required);
+    return has("SIGNATURE", "Signature") && has("TEXT", "Name") && has("TEXT", "Title") && has("DATE", "Date");
+  };
+  const signersMissing = signers.filter((r) => !signerReady(r.id));
   const ready = signers.length > 0 && signersMissing.length === 0;
   const sendBlocker =
     data.recipients.length === 0
@@ -229,7 +280,7 @@ export function AgreementManager({ agreementId }: { agreementId: string }) {
       : signers.length === 0
         ? "Add at least one signer"
         : signersMissing.length
-          ? `Place a field for: ${signersMissing.map((r) => r.email).join(", ")}`
+          ? `Standard blocks missing for: ${signersMissing.map((r) => r.email).join(", ")} — click Auto-place`
           : null;
 
   return (
@@ -244,17 +295,50 @@ export function AgreementManager({ agreementId }: { agreementId: string }) {
         </div>
         {isDraft ? (
           <div style={{ textAlign: "right" }}>
-            <button className="btn" disabled={busy || !ready} onClick={send} title={sendBlocker ?? "Send for signature"}>
-              Send for signature
-            </button>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <RemoveButton
+                label="Delete"
+                confirmMessage={`Delete draft agreement "${data.title}"?`}
+                onDelete={async () => {
+                  const r = await fetch(`/api/agreements/${agreementId}`, { method: "DELETE" });
+                  if (r.ok) return { ok: true };
+                  const j = (await r.json().catch(() => ({}))) as { error?: string };
+                  return { ok: false, error: j.error ?? `Error ${r.status}` };
+                }}
+                onDone={() => router.push("/agreements")}
+              />
+              <button className="btn" disabled={busy || !ready} onClick={send} title={sendBlocker ?? "Send for signature"}>
+                Send for signature
+              </button>
+            </div>
             <div style={{ fontSize: 11, marginTop: 4, color: sendBlocker ? "var(--amber)" : "var(--green)" }}>
               {sendBlocker ? `⚠ ${sendBlocker}` : "✓ Ready to send"}
             </div>
           </div>
         ) : (
-          <Link href={`/documents/${data.documentId}`} className="btn secondary">
-            View document
-          </Link>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <Link href={`/documents/${data.documentId}`} className="btn secondary">
+              View document
+            </Link>
+            {canVoid ? (
+              <button type="button" className="btn secondary" disabled={busy} onClick={() => void voidAgreement()}>
+                Void agreement
+              </button>
+            ) : null}
+            {canDelete ? (
+              <RemoveButton
+                label="Delete agreement"
+                confirmMessage={`Delete agreement "${data.title}"? You can then delete the document if needed.`}
+                onDelete={async () => {
+                  const r = await fetch(`/api/agreements/${agreementId}`, { method: "DELETE" });
+                  if (r.ok) return { ok: true };
+                  const j = (await r.json().catch(() => ({}))) as { error?: string };
+                  return { ok: false, error: j.error ?? `Error ${r.status}` };
+                }}
+                onDone={() => router.push("/agreements")}
+              />
+            ) : null}
+          </div>
         )}
       </div>
 
@@ -275,7 +359,7 @@ export function AgreementManager({ agreementId }: { agreementId: string }) {
       ) : null}
       {msg ? <p className="error" style={{ marginBottom: 12 }}>{msg}</p> : null}
 
-      <div className="grid" style={{ gridTemplateColumns: "1fr 320px", gap: 16, alignItems: "start" }}>
+      <div className="split-layout">
         {/* Document with field overlay */}
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <div className="row" style={{ padding: 12, borderBottom: "1px solid var(--border)", ...tb }}>
@@ -295,14 +379,19 @@ export function AgreementManager({ agreementId }: { agreementId: string }) {
               </button>
             </div>
             {isDraft ? (
-              <button
-                className={placeMode ? "btn" : "btn secondary"}
-                disabled={!recipientId}
-                onClick={() => setPlaceMode((v) => !v)}
-                title="Then click on the document to drop a field"
-              >
-                {placeMode ? "✓ Placing — click the doc" : "+ Place field"}
-              </button>
+              <>
+                <button className="btn secondary" disabled={busy || signers.length === 0} onClick={autoPlace}>
+                  Auto-place blocks
+                </button>
+                <button
+                  className={placeMode ? "btn" : "btn secondary"}
+                  disabled={!recipientId}
+                  onClick={() => setPlaceMode((v) => !v)}
+                  title="Optional — click on the document to drop a custom field"
+                >
+                  {placeMode ? "✓ Placing — click the doc" : "+ Manual field"}
+                </button>
+              </>
             ) : null}
           </div>
           <div style={{ padding: 16, background: "#0a0e15", textAlign: "center" }}>
@@ -339,7 +428,7 @@ export function AgreementManager({ agreementId }: { agreementId: string }) {
                   <div
                     key={f.id}
                     className="fieldtag"
-                    title={`${f.type} · ${data.recipients[recipIndex(f.recipientId)]?.email ?? "?"} — drag to move`}
+                    title={`${f.label ?? f.type} · ${data.recipients[recipIndex(f.recipientId)]?.email ?? "?"} — drag to move`}
                     onClick={(e) => e.stopPropagation()}
                     onPointerDown={(e) => startDrag(e, f)}
                     onPointerMove={moveDrag}
@@ -356,7 +445,7 @@ export function AgreementManager({ agreementId }: { agreementId: string }) {
                       touchAction: "none",
                     }}
                   >
-                    {f.type}
+                    {f.label ?? f.type}
                     <button
                       type="button"
                       title="Remove field"
@@ -408,8 +497,8 @@ export function AgreementManager({ agreementId }: { agreementId: string }) {
                       <div className="muted" style={{ fontSize: 11 }}>
                         {r.role} · order {r.routingOrder} · {r.status} · {count} field(s)
                       </div>
-                      {isDraft && r.role !== "CC" && count === 0 ? (
-                        <div style={{ fontSize: 11, color: "var(--amber)" }}>⚠ needs at least one field</div>
+                      {isDraft && r.role !== "CC" && !signerReady(r.id) ? (
+                        <div style={{ fontSize: 11, color: "var(--amber)" }}>⚠ needs signature, name, title & date</div>
                       ) : null}
                       {!isDraft && r.token ? (
                         <div style={{ marginTop: 4 }}>
@@ -443,7 +532,18 @@ export function AgreementManager({ agreementId }: { agreementId: string }) {
           {isDraft ? (
             <>
               <div className="card">
-                <h2>Field to place</h2>
+                <h2>Signature blocks</h2>
+                <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
+                  Use <strong>Auto-place blocks</strong> to add a signature page with Signature, Name, Title, and Date
+                  for each signer (industry standard). Manual placement is optional.
+                </p>
+                <button className="btn secondary" disabled={busy || signers.length === 0} onClick={autoPlace} style={{ width: "100%" }}>
+                  Auto-place signature blocks
+                </button>
+              </div>
+
+              <div className="card">
+                <h2>Manual field (optional)</h2>
                 <label className="label" style={{ marginTop: 0 }}>
                   Recipient
                 </label>
@@ -463,8 +563,7 @@ export function AgreementManager({ agreementId }: { agreementId: string }) {
                   ))}
                 </select>
                 <p className="muted" style={{ fontSize: 11, marginTop: 10 }}>
-                  Click <strong>Place field</strong>, then click on the page to drop it. Each signer needs at
-                  least one field before you can send.
+                  Click <strong>Manual field</strong> above, then click on the page to drop extra fields.
                 </p>
               </div>
 

@@ -37,6 +37,13 @@ model Document {
   id          String   @id @default(cuid())
   title       String
   description String?
+  kind        String   @default("FILE") // FILE | COLLECTION
+  commercialId     String?  @unique // DCOL-n for collections
+  commercialTypeId String?
+  commercialType   CommercialRecordType? @relation(fields: [commercialTypeId], references: [id])
+  collectionParentId String?
+  collectionParent   Document?  @relation("DocCollection", fields: [collectionParentId], references: [id], onDelete: SetNull)
+  collectionChildren Document[] @relation("DocCollection")
   status      String   @default("ACTIVE") // ACTIVE | ARCHIVED
   ownerId     String
   owner       User     @relation("UploadedBy", fields: [ownerId], references: [id])
@@ -49,6 +56,7 @@ model Document {
   annotations Annotation[]
 
   @@index([ownerId])
+  @@index([collectionParentId])
 }
 
 model DocumentVersion {
@@ -116,6 +124,7 @@ model Field {
   recipientId String?
   recipient   Recipient? @relation(fields: [recipientId], references: [id])
   type        String // SIGNATURE | INITIAL | DATE | TEXT | CHECKBOX
+  label       String? // e.g. "Name", "Title" — shown to signers
   page        Int        @default(1)
   x           Float
   y           Float
@@ -222,18 +231,28 @@ model TemplateClause {
 }
 
 model Contract {
-  id          String    @id @default(cuid())
-  title       String
+  id               String    @id @default(cuid())
+  commercialId     String?   @unique
+  commercialTypeId String?
+  commercialType   CommercialRecordType? @relation(fields: [commercialTypeId], references: [id])
+  parentContractId String?
+  parentContract   Contract? @relation("ContractHierarchy", fields: [parentContractId], references: [id], onDelete: SetNull)
+  childContracts   Contract[] @relation("ContractHierarchy")
+  title            String
   status      String    @default("DRAFT") // DRAFT | GENERATED | SENT
   templateId  String?
   template    Template? @relation(fields: [templateId], references: [id])
   variables   Json?
   documentId  String? // rendered Document.id (no FK; Document model untouched)
+  dealId      String?   @unique // linked deal workflow record (same commercialId)
   createdById String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   clauses ContractClause[]
+
+  @@index([parentContractId])
+  @@index([commercialTypeId])
 }
 
 model ContractClause {
@@ -312,4 +331,143 @@ model WebhookSubscription {
   lastStatus     Int?
   lastDeliveryAt DateTime?
   createdAt      DateTime  @default(now())
+}
+
+// ── Procurement workflow (org ↔ vendor negotiation) ───────────────────────────
+
+model OrganizationSettings {
+  id            String   @id @default("default")
+  orgName       String   @default("Your Organization")
+  logoStorageKey String?
+  headerText    String?
+  footerText    String?
+  updatedAt     DateTime @updatedAt
+}
+
+model FileTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  documentId  String // master PDF/DOCX-as-PDF shell
+  direction   String   @default("ORG_SELLING") // ORG_SELLING | ORG_BUYING
+  active      Boolean  @default(true)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  deals Deal[]
+}
+
+model ComplianceRulePack {
+  id          String   @id @default(cuid())
+  name        String
+  direction   String   @default("ORG_BUYING") // ORG_SELLING | ORG_BUYING — Adobe T&C per side
+  documentId  String? // uploaded rules PDF (optional)
+  rulesText   String // extracted / pasted rules
+  active      Boolean  @default(true)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  deals Deal[]
+}
+
+model CommercialIdSequence {
+  prefix  String @id // SMCW | PMCW | SOR | POR | custom
+  nextVal Int    @default(1)
+}
+
+model CommercialRecordType {
+  id          String   @id @default(cuid())
+  key         String   @unique // smcw, sor, custom_amendment
+  name        String
+  prefix      String   @unique // SMCW, SOR — used in commercialId
+  direction   String   // ORG_SELLING | ORG_BUYING
+  domain      String   @default("DEAL") // DEAL | CONTRACT | DOCUMENT
+  isRoot      Boolean  @default(false)
+  description String?
+  system      Boolean  @default(false)
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  deals       Deal[]
+  contracts   Contract[]
+  documents   Document[]
+  childLinks  CommercialTypeLink[] @relation("ChildType")
+  parentLinks CommercialTypeLink[] @relation("ParentType")
+}
+
+model CommercialTypeLink {
+  id           String               @id @default(cuid())
+  parentTypeId String
+  parentType   CommercialRecordType @relation("ParentType", fields: [parentTypeId], references: [id], onDelete: Cascade)
+  childTypeId  String
+  childType    CommercialRecordType @relation("ChildType", fields: [childTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([parentTypeId, childTypeId])
+}
+
+model Deal {
+  id               String    @id @default(cuid())
+  commercialId     String?   @unique // e.g. SMCW-1, SOR-2, PMCW-3, POR-4
+  commercialTypeId String?
+  commercialType   CommercialRecordType? @relation(fields: [commercialTypeId], references: [id])
+  recordType       String    @default("ORDER_FORM") // legacy; prefer commercialTypeId
+  parentDealId     String?
+  parentDeal       Deal?     @relation("DealHierarchy", fields: [parentDealId], references: [id], onDelete: SetNull)
+  childDeals       Deal[]    @relation("DealHierarchy")
+  title            String
+  direction        String    @default("ORG_SELLING") // ORG_SELLING | ORG_BUYING
+  status           String    @default("DRAFT")
+  // DRAFT | WITH_VENDOR | VENDOR_SUBMITTED | UNDER_REVIEW | ISSUES_OPEN | APPROVED | SIGNING | COMPLETED
+  documentId       String
+  contractId       String?   @unique // linked structured contract (same commercialId)
+  agreementId      String?
+  ownerId          String
+  vendorEmail      String
+  vendorName       String?
+  vendorAccessToken String   @unique
+  fileTemplateId   String?
+  fileTemplate     FileTemplate? @relation(fields: [fileTemplateId], references: [id])
+  rulePackId       String?
+  rulePack         ComplianceRulePack? @relation(fields: [rulePackId], references: [id])
+  message          String?
+  sentToVendorAt   DateTime?
+  approvedAt       DateTime?
+  completedAt      DateTime?
+  lastDiffFromVersion Int?
+  lastDiffToVersion   Int?
+  lastDiffSummary     String?
+  lastDiffLines       Json? // [{type:'add'|'remove'|'same', text:string}]
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  issues ReviewIssue[]
+
+  @@index([ownerId])
+  @@index([status])
+  @@index([parentDealId])
+  @@index([recordType])
+  @@index([commercialTypeId])
+}
+
+model ReviewIssue {
+  id             String   @id @default(cuid())
+  dealId         String
+  deal           Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  severity       String   @default("MEDIUM") // LOW | MEDIUM | HIGH
+  title          String
+  description    String
+  page           Int?
+  status         String   @default("OPEN") // OPEN | RESOLVED | WAIVED
+  raisedBySide   String   @default("ORG") // ORG | VENDOR | SYSTEM
+  raisedById     String?
+  vendorResponse String?
+  resolvedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([dealId, status])
 }

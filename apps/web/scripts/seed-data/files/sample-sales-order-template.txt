@@ -1,0 +1,25 @@
+SALES ORDER FORM — TEMPLATE
+Under Master Customer Agreement
+
+Provider: Demo Corp Inc.
+Customer: _________________________________
+Order effective date: _____________________
+Master agreement reference: _________________
+
+PRODUCTS AND SERVICES
+
+| SKU | Product / Service | Qty | Unit price | Extended |
+| --- | --- | --- | --- | --- |
+|     |                   |     |            |          |
+|     |                   |     |            |          |
+|     |                   |     |            |          |
+
+Order total: ______________________________
+Billing frequency: _________________________
+Initial term: ______________________________
+Support tier: ______________________________
+
+Special terms:
+_________________________________________________________________
+
+Authorized signatures below.

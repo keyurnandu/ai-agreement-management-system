@@ -3,7 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { recordAudit } from "@/lib/audit";
 import { roleAtLeast } from "@/lib/rbac";
-import { substitute } from "@/lib/authoring";
+import { substitute, normalizeClauseText } from "@/lib/authoring";
+import { renumberContractClauses } from "@/lib/contract-clauses";
 
 export const dynamic = "force-dynamic";
 
@@ -30,18 +31,18 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string; c
   if (body.reset && clause.sourceClauseId) {
     const src = await prisma.clauseLibraryEntry.findUnique({ where: { id: clause.sourceClauseId } });
     if (src) {
-      newBody = substitute(src.body, vars);
+      newBody = normalizeClauseText(substitute(src.body, vars));
       isDeviation = false;
     }
   } else if (typeof body.fallbackIndex === "number" && clause.sourceClauseId) {
     const src = await prisma.clauseLibraryEntry.findUnique({ where: { id: clause.sourceClauseId } });
     const fbs = ((src?.fallbacks as { label: string; text: string }[] | null) ?? [])[body.fallbackIndex];
     if (fbs) {
-      newBody = substitute(fbs.text, vars);
+      newBody = normalizeClauseText(substitute(fbs.text, vars));
       isDeviation = true;
     }
   } else if (typeof body.body === "string") {
-    newBody = body.body;
+    newBody = normalizeClauseText(body.body);
     isDeviation = true;
   }
 
@@ -60,4 +61,39 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string; c
   });
 
   return NextResponse.json({ id: updated.id, body: updated.body, isDeviation: updated.isDeviation });
+}
+
+export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string; clauseId: string }> }) {
+  const session = await auth();
+  if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const actor = { id: session.user.id, role: session.user.role };
+
+  const { id, clauseId } = await ctx.params;
+  const contract = await prisma.contract.findUnique({ where: { id } });
+  if (!contract) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!(roleAtLeast(actor.role, "MANAGER") || contract.createdById === actor.id)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
+  const clause = await prisma.contractClause.findUnique({ where: { id: clauseId } });
+  if (!clause || clause.contractId !== id) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  const count = await prisma.contractClause.count({ where: { contractId: id } });
+  if (count <= 1) {
+    return NextResponse.json({ error: "contract must keep at least one clause" }, { status: 409 });
+  }
+
+  await prisma.contractClause.delete({ where: { id: clauseId } });
+  await renumberContractClauses(id);
+
+  await recordAudit({
+    action: "contract.clause.remove",
+    actorId: actor.id,
+    actorEmail: session.user.email,
+    resourceType: "CONTRACT",
+    resourceId: id,
+    metadata: { clauseId, title: clause.title },
+  });
+
+  return NextResponse.json({ ok: true });
 }

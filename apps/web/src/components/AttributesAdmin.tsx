@@ -39,7 +39,7 @@ const BLANK: FormState = {
   inclusion: [],
   exclusion: [],
 };
-const TYPES = ["TEXT", "DATE", "NUMBER", "BOOLEAN", "ENUM"];
+const TYPES = ["TEXT", "MULTILINE", "JSON", "TABLE", "DATE", "NUMBER", "BOOLEAN", "ENUM"];
 
 function ExampleRows({
   title,
@@ -298,7 +298,7 @@ export function AttributesAdmin({ canManage }: { canManage: boolean }) {
             <button className="btn" disabled={busy || !canManage} onClick={save}>{busy ? "Saving…" : "Save"}</button>
             <button className="btn secondary" onClick={() => setForm(null)}>Cancel</button>
           </div>
-          {!canManage ? <p className="muted" style={{ fontSize: 12 }}>Manager access required to save.</p> : null}
+          {!canManage ? <p className="muted" style={{ fontSize: 12 }}>Editor access or above required to save.</p> : null}
         </div>
       ) : null}
     </div>

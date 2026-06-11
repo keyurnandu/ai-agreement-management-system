@@ -25,6 +25,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     width?: number;
     height?: number;
     required?: boolean;
+    label?: string;
   };
 
   const type = (body.type ?? "SIGNATURE").toUpperCase();
@@ -48,6 +49,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       width: Number(body.width ?? 0.25),
       height: Number(body.height ?? 0.04),
       required: body.required ?? true,
+      label: body.label?.trim() || null,
     },
   });
 

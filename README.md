@@ -44,6 +44,8 @@ Five swappable adapters (set in `.env`):
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md).
 
+**User & workflow guide:** [docs/WORKFLOWS_AND_SCENARIOS.md](docs/WORKFLOWS_AND_SCENARIOS.md) — vendor portal, procurement/sales deals, negotiation, compliance, attributes, settings, analytics, and all deal statuses.
+
 ---
 
 ## Prerequisites
@@ -101,6 +103,6 @@ services/pdf-engine/     FastAPI — PyMuPDF-based PDF read/edit engine
 services/intelligence/   FastAPI — pluggable AI, RAG, analytics
 packages/shared-types/   Shared TypeScript domain types
 scripts/                 setup.mjs (bootstrap) · dev.mjs (run all)
-docs/                    Architecture & phased plan
+docs/                    Architecture, workflows & scenarios, cloud
 data/                    Local runtime data (gitignored): files, sqlite, vectors
 ```

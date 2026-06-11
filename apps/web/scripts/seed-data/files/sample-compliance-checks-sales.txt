@@ -1,0 +1,25 @@
+Demo Corp Inc. — Standard customer contract review checklist
+Use with Deals → Sales → Run compliance check
+
+1. LIABILITY
+   Customer liability cap must not exceed fees paid in the prior twelve (12) months.
+   Uncapped liability for gross negligence or willful misconduct is acceptable.
+
+2. SERVICE LEVELS
+   Production API uptime commitment: minimum 99.9% monthly.
+   Support: P1 response within 1 hour; P2 within 4 business hours.
+
+3. DATA & PRIVACY
+   Customer data deleted within 30 days of termination.
+   Sub-processors listed and customer notified of material changes.
+
+4. RENEWAL & PRICING
+   Auto-renewal requires at least 60 days written non-renewal notice.
+   Renewal price increases capped at 5% annually unless order form states otherwise.
+
+5. ACCEPTABLE USE
+   Customer may not reverse engineer, resell, or use service for unlawful purposes.
+
+6. EXPORT & GOVERNING LAW
+   Customer warrants US export compliance.
+   Governing law: State of Delaware unless master agreement specifies otherwise.

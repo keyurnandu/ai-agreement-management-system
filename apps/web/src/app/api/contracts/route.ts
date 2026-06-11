@@ -3,7 +3,15 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { recordAudit } from "@/lib/audit";
 import { roleAtLeast } from "@/lib/rbac";
-import { substitute, type TemplateVariable } from "@/lib/authoring";
+import { substitute, normalizeClauseText, normalizeClauseTitle, type TemplateVariable } from "@/lib/authoring";
+import {
+  allocateCommercialId,
+  getCommercialType,
+  listCommercialTypes,
+  typeLabel,
+  validateParentForType,
+} from "@/lib/commercial-types";
+import { linkDealAndContract, autoLinkContractByCommercialId } from "@/lib/commercial-link";
 import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -16,13 +24,28 @@ export async function GET() {
   const where = roleAtLeast(role, "MANAGER") ? {} : { createdById: uid };
   const rows = await prisma.contract.findMany({
     where,
-    include: { template: { select: { name: true } } },
-    orderBy: { updatedAt: "desc" },
+    include: {
+      template: { select: { name: true } },
+      commercialType: true,
+      parentContract: { select: { id: true, commercialId: true, title: true } },
+    },
+    orderBy: [{ commercialId: "asc" }, { updatedAt: "desc" }],
   });
 
+  const types = await listCommercialTypes(true, "CONTRACT");
+
   return NextResponse.json({
+    isAdmin: roleAtLeast(role, "ADMIN"),
+    types,
     contracts: rows.map((c) => ({
       id: c.id,
+      commercialId: c.commercialId,
+      parentContractId: c.parentContractId,
+      parent: c.parentContract,
+      typePrefix: c.commercialType?.prefix ?? null,
+      commercialTypeId: c.commercialTypeId,
+      direction: c.commercialType?.direction ?? null,
+      recordTypeLabel: c.commercialType ? typeLabel(c.commercialType) : null,
       title: c.title,
       status: c.status,
       template: c.template?.name ?? null,
@@ -40,7 +63,32 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "you need editor access to author contracts" }, { status: 403 });
   }
 
-  const body = (await req.json()) as { templateId?: string; title?: string; variables?: Record<string, unknown> };
+  const body = (await req.json()) as {
+    templateId?: string;
+    title?: string;
+    variables?: Record<string, unknown>;
+    commercialTypeId?: string;
+    parentContractId?: string;
+    dealId?: string;
+  };
+
+  if (!body.commercialTypeId) {
+    return NextResponse.json({ error: "commercialTypeId required" }, { status: 400 });
+  }
+  const commercialType = await getCommercialType(body.commercialTypeId);
+  if (!commercialType || commercialType.domain !== "CONTRACT" || !commercialType.active) {
+    return NextResponse.json({ error: "invalid contract type" }, { status: 400 });
+  }
+
+  const parentContractId = body.parentContractId?.trim() || null;
+  if (commercialType.isRoot && parentContractId) {
+    return NextResponse.json({ error: "master contract types cannot have a parent" }, { status: 400 });
+  }
+  if (parentContractId) {
+    const check = await validateParentForType(parentContractId, body.commercialTypeId, "CONTRACT");
+    if (!check.ok) return NextResponse.json({ error: check.error }, { status: 400 });
+  }
+
   if (!body.templateId) return NextResponse.json({ error: "templateId required" }, { status: 400 });
 
   const tpl = await prisma.template.findUnique({
@@ -56,8 +104,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `missing required: ${missing.join(", ")}` }, { status: 400 });
   }
 
+  const idPrefix = commercialType.prefix.replace(/^C(?=[A-Z])/, "");
+  let commercialId: string;
+  if (body.dealId) {
+    const deal = await prisma.deal.findUnique({ where: { id: body.dealId }, select: { commercialId: true } });
+    commercialId = deal?.commercialId ?? (await allocateCommercialId(idPrefix));
+  } else {
+    commercialId = await allocateCommercialId(idPrefix);
+  }
+
   const contract = await prisma.contract.create({
     data: {
+      commercialId,
+      commercialTypeId: body.commercialTypeId,
+      parentContractId,
       title: body.title?.trim() || tpl.name,
       templateId: tpl.id,
       variables: vars as Prisma.InputJsonValue,
@@ -70,8 +130,8 @@ export async function POST(req: Request) {
     data: tpl.clauses.map((tc, i) => ({
       contractId: contract.id,
       order: i + 1,
-      title: tc.clause.title,
-      body: substitute(tc.clause.body, vars),
+      title: normalizeClauseTitle(tc.clause.title),
+      body: normalizeClauseText(substitute(tc.clause.body, vars)),
       sourceClauseId: tc.clause.id,
     })),
   });
@@ -82,8 +142,24 @@ export async function POST(req: Request) {
     actorEmail: session.user.email,
     resourceType: "CONTRACT",
     resourceId: contract.id,
-    metadata: { templateKey: tpl.key },
+    metadata: { templateKey: tpl.key, commercialId },
   });
 
-  return NextResponse.json({ id: contract.id });
+  if (body.dealId) {
+    await linkDealAndContract(body.dealId, contract.id);
+  } else {
+    await autoLinkContractByCommercialId(contract.id, commercialId);
+  }
+
+  const linkedDealId =
+    body.dealId ??
+    (
+      await prisma.contract.findUnique({
+        where: { id: contract.id },
+        select: { dealId: true },
+      })
+    )?.dealId ??
+    null;
+
+  return NextResponse.json({ id: contract.id, commercialId, dealId: linkedDealId });
 }

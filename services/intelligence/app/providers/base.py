@@ -50,17 +50,43 @@ class AIProvider(ABC):
         }
 
     async def extract(self, text: str, attributes: list[dict]) -> list[dict]:
-        """Default LLM-based extraction: one focused prompt per attribute via complete().
-        Providers with no real LLM (mock) override this with a heuristic."""
+        """LLM extraction with RAG-style chunk selection for large documents."""
+        from ..core.embeddings import get_embedder
+        from ..core.extract_ctx import build_extraction_context, prepare_document_chunks
+        from ..core.extract_parse import extract_max_tokens, normalize_extract_value, wants_structured_output
+        from ..core.extract_mapreduce import should_map_reduce
+
         system = (
             "You are a contract data extractor. Extract the requested field from the contract text. "
             "Respond with ONLY the value, no explanation. If absent, respond 'N/A'."
         )
+        embedder = get_embedder()
+        chunks = prepare_document_chunks(text)
+        chunk_vectors = await embedder.embed(chunks) if chunks else None
+
         results: list[dict] = []
         for a in attributes:
+            if should_map_reduce(text, a):
+                value = await self._extract_structured_mapreduce(a, text)
+                results.append({"key": a.get("key"), "value": value, "confidence": None})
+                continue
+
             mode = (a.get("mode") or "STRICT").upper()
             inc = a.get("inclusion") or []
             exc = a.get("exclusion") or []
+            ctx = await build_extraction_context(
+                text,
+                a,
+                chunks=chunks,
+                chunk_vectors=chunk_vectors,
+                embedder=embedder,
+            )
+
+            if wants_structured_output(a):
+                value = await self._extract_structured_json(a, ctx, mode, inc, exc, bool(chunks), len(text))
+                results.append({"key": a.get("key"), "value": value, "confidence": None})
+                continue
+
             parts = [
                 f"Field: {a.get('label') or a.get('key')}",
                 f"Type: {a.get('type', 'TEXT')}",
@@ -75,11 +101,92 @@ class AIProvider(ABC):
                 parts.append("Examples of correct values: " + "; ".join(str(x) for x in inc))
             if exc:
                 parts.append("Do NOT return values like: " + "; ".join(str(x) for x in exc))
-            parts.append("\nCONTRACT TEXT:\n" + text[:6000])
-            c = await self.complete("\n".join(parts), system, max_tokens=120)
-            lines = [ln for ln in (c.text or "").strip().splitlines() if ln.strip()]
-            results.append({"key": a.get("key"), "value": (lines[0][:300] if lines else "N/A"), "confidence": None})
+            if chunks:
+                from ..core.extract_ctx import TOP_K
+
+                parts.append(
+                    f"(Note: showing up to {TOP_K} most relevant sections from a "
+                    f"{len(text):,}-character document.)"
+                )
+            parts.append("\nCONTRACT TEXT:\n" + ctx)
+            max_out = extract_max_tokens(a)
+            c = await self.complete("\n".join(parts), system, max_tokens=max_out)
+            results.append({"key": a.get("key"), "value": normalize_extract_value(a, c.text or ""), "confidence": None})
         return results
+
+    async def _extract_structured_json(
+        self,
+        attribute: dict,
+        ctx: str,
+        mode: str,
+        inclusion: list,
+        exclusion: list,
+        chunked: bool,
+        doc_len: int,
+    ) -> str:
+        """Extract line items as JSON then format — avoids incomplete markdown tables."""
+        from ..core.extract_mapreduce import (
+            TABLE_EXTRACT_SYSTEM,
+            format_structured_result,
+            parse_items_json,
+        )
+        from ..core.extract_ctx import TOP_K
+        from ..core.extract_parse import normalize_extract_value
+
+        parts = [
+            f"Field: {attribute.get('label') or attribute.get('key')}",
+            f"Type: {attribute.get('type', 'TEXT')}",
+            "Mode: "
+            + (
+                "STRICT — return values verbatim from the text"
+                if mode == "STRICT"
+                else "FLEXIBLE — infer/normalize even if not stated verbatim"
+            ),
+            f"Instruction: {attribute.get('prompt', '')}",
+        ]
+        if inclusion:
+            parts.append("Examples of correct values: " + "; ".join(str(x) for x in inclusion))
+        if exclusion:
+            parts.append("Do NOT return values like: " + "; ".join(str(x) for x in exclusion))
+        if chunked:
+            parts.append(f"(Note: showing up to {TOP_K} most relevant sections from a {doc_len:,}-character document.)")
+        parts.append("\nTEXT:\n" + ctx)
+
+        c = await self.complete("\n".join(parts), TABLE_EXTRACT_SYSTEM, max_tokens=4000)
+        items = parse_items_json(c.text or "")
+        if items:
+            return format_structured_result(items, attribute, passes=1)
+        return normalize_extract_value(attribute, c.text or "")
+
+    async def _extract_structured_mapreduce(self, attribute: dict, text: str) -> str:
+        """Process large documents chunk-by-chunk and merge line items."""
+        from ..core.extract_mapreduce import (
+            TABLE_EXTRACT_SYSTEM,
+            CHUNK_OUTPUT_TOKENS,
+            chunks_for_line_items,
+            format_structured_result,
+            merge_items,
+            parse_items_json,
+        )
+        from ..core.extract_parse import STRUCTURED_MAX_CHARS, normalize_extract_value
+
+        sections = chunks_for_line_items(text, attribute)
+        all_rows: list[dict] = []
+        for i, section in enumerate(sections, start=1):
+            prompt = (
+                f"Section {i} of {len(sections)}.\n"
+                f"Field: {attribute.get('label') or attribute.get('key')}\n"
+                f"Instruction: {attribute.get('prompt', '')}\n\n"
+                f"TEXT:\n{section}"
+            )
+            c = await self.complete(prompt, TABLE_EXTRACT_SYSTEM, max_tokens=CHUNK_OUTPUT_TOKENS)
+            all_rows.extend(parse_items_json(c.text or ""))
+
+        merged = merge_items(all_rows)
+        if not merged:
+            return "N/A"
+        formatted = format_structured_result(merged, attribute, passes=len(sections))
+        return normalize_extract_value(attribute, formatted)
 
     @staticmethod
     def _json(raw: str, key: str, default):

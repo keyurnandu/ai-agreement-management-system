@@ -1,4 +1,5 @@
 import base64
+import io
 import json
 
 import fitz  # PyMuPDF
@@ -8,6 +9,35 @@ from pydantic import BaseModel
 from ..core.security import verify_service_token
 
 router = APIRouter(prefix="/pdf", tags=["pdf"], dependencies=[Depends(verify_service_token)])
+
+CONTRACT_DOCUMENT_CSS = """
+body { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; line-height: 1.45; color: #1a1a1a; margin: 0; }
+.doc-title { font-size: 18pt; font-weight: 700; margin: 0 0 18pt 0; color: #111111; }
+.clause { margin: 0 0 16pt 0; }
+.clause-title { font-size: 11pt; font-weight: 700; margin: 0 0 6pt 0; color: #111111; }
+.clause-body { font-size: 11pt; font-weight: 400; margin: 0; white-space: pre-wrap; }
+"""
+
+
+def _render_html_document(html: str, css: str) -> tuple[bytes, int]:
+    """Render HTML+CSS to a multi-page PDF with consistent typography."""
+    stream = io.BytesIO()
+    writer = fitz.DocumentWriter(stream)
+
+    def rectfn(_rect_num: int, _filled: fitz.Rect) -> tuple[fitz.Rect, fitz.Rect, None]:
+        mediabox = fitz.Rect(0, 0, 595, 842)
+        content = fitz.Rect(36, 48, 559, 794)
+        return mediabox, content, None
+
+    story = fitz.Story(html=html, user_css=css)
+    story.write(writer, rectfn)
+    writer.close()
+    pdf_bytes = stream.getvalue()
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        return pdf_bytes, doc.page_count
+    finally:
+        doc.close()
 
 
 def _open(data: bytes) -> fitz.Document:
@@ -119,6 +149,53 @@ async def page_ops(file: UploadFile, ops: str = Form(...)) -> Response:
         doc.close()
 
 
+@router.post("/search-text", summary="Find text on a page and return normalized bounding boxes")
+async def search_text(file: UploadFile, query: str = Form(...), page: int = Form(0)) -> dict:
+    """page=0 searches all pages; otherwise restricts to one page (1-based)."""
+    q = (query or "").strip()
+    if not q:
+        return {"hits": []}
+    doc = _open(await file.read())
+    try:
+        hits: list[dict] = []
+        pages = range(doc.page_count) if page <= 0 else [page - 1]
+        for i in pages:
+            if i < 0 or i >= doc.page_count:
+                continue
+            p = doc[i]
+            w_pt, h_pt = p.rect.width, p.rect.height
+            for rect in p.search_for(q[:160]):
+                hits.append(
+                    {
+                        "page": i + 1,
+                        "x": rect.x0 / w_pt,
+                        "y": rect.y0 / h_pt,
+                        "w": (rect.x1 - rect.x0) / w_pt,
+                        "h": (rect.y1 - rect.y0) / h_pt,
+                    }
+                )
+                if hits:
+                    return {"hits": hits[:5]}
+            if len(q) > 4:
+                for word in q.split():
+                    if len(word) < 4:
+                        continue
+                    for rect in p.search_for(word[:80]):
+                        hits.append(
+                            {
+                                "page": i + 1,
+                                "x": rect.x0 / w_pt,
+                                "y": rect.y0 / h_pt,
+                                "w": (rect.x1 - rect.x0) / w_pt,
+                                "h": (rect.y1 - rect.y0) / h_pt,
+                            }
+                        )
+                        return {"hits": hits[:5]}
+        return {"hits": hits}
+    finally:
+        doc.close()
+
+
 @router.post("/form-fields", summary="List AcroForm fields")
 async def form_fields(file: UploadFile) -> dict:
     doc = _open(await file.read())
@@ -154,6 +231,50 @@ async def fill_form(file: UploadFile, values: str = Form(...)) -> Response:
                     filled += 1
         out = doc.tobytes(deflate=True, garbage=3)
         return Response(content=out, media_type="application/pdf", headers={"X-Fields-Filled": str(filled)})
+    finally:
+        doc.close()
+
+
+@router.post("/from-html", summary="Render HTML content to a PDF")
+async def from_html(html: str = Form(...), title: str = Form("")) -> Response:
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    rect = fitz.Rect(36, 48, 559, 794)
+    body = html or "<p></p>"
+    try:
+        page.insert_htmlbox(rect, body, css="body{font-family:Arial,sans-serif;font-size:11pt;line-height:1.4;}")
+    except Exception:  # noqa: BLE001
+        page.insert_text((36, 64), title or "Document", fontsize=14)
+        page.insert_text((36, 88), "Could not render full HTML; content may be simplified.", fontsize=10)
+    out = doc.tobytes(deflate=True, garbage=3)
+    doc.close()
+    return Response(content=out, media_type="application/pdf", headers={"X-Page-Count": "1"})
+
+
+@router.post("/apply-branding", summary="Apply org header/footer (and optional logo) to every page")
+async def apply_branding(
+    file: UploadFile,
+    header: str = Form(""),
+    footer: str = Form(""),
+    logo_b64: str = Form(""),
+) -> Response:
+    doc = _open(await file.read())
+    try:
+        for page_num, page in enumerate(doc, start=1):
+            w_pt, h_pt = page.rect.width, page.rect.height
+            if header:
+                page.insert_text((36, 28), header[:200], fontsize=9, color=(0.2, 0.2, 0.2))
+                page.draw_line((36, 34), (w_pt - 36, 34), color=(0.75, 0.75, 0.75), width=0.5)
+            if footer:
+                footer_line = footer.replace("{n}", str(page_num))[:200]
+                page.insert_text((36, h_pt - 24), footer_line, fontsize=8, color=(0.4, 0.4, 0.4))
+            if logo_b64 and page_num == 1:
+                try:
+                    page.insert_image(fitz.Rect(36, 40, 96, 80), stream=base64.b64decode(logo_b64))
+                except Exception:  # noqa: BLE001
+                    pass
+        out = doc.tobytes(deflate=True, garbage=3)
+        return Response(content=out, media_type="application/pdf", headers={"X-Page-Count": str(doc.page_count)})
     finally:
         doc.close()
 
@@ -200,20 +321,38 @@ class TextPagePayload(BaseModel):
     lines: list[str] = []
 
 
+class ContractDocumentPayload(BaseModel):
+    html: str
+    css: str | None = None
+
+
+@router.post("/contract-document", summary="Render styled contract HTML to a multi-page PDF")
+async def contract_document(payload: ContractDocumentPayload) -> Response:
+    css = payload.css or CONTRACT_DOCUMENT_CSS
+    pdf_bytes, pages = _render_html_document(payload.html, css)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"X-Page-Count": str(pages)},
+    )
+
+
 @router.post("/text-page", summary="Render a title + lines to a (multi-page) PDF")
 async def text_page(payload: TextPagePayload) -> Response:
     margin_x, top, bottom = 56, 64, 780
+    font = "helv"
+    body_color = (0.1, 0.1, 0.1)
     doc = fitz.open()
     page = doc.new_page()
     y = top
-    page.insert_text((margin_x, y), payload.title, fontsize=16, color=(0, 0, 0))
+    page.insert_text((margin_x, y), payload.title, fontname=font, fontsize=16, color=body_color)
     y += 30
     for line in payload.lines:
         if y > bottom:
             page = doc.new_page()
             y = top
-        page.insert_text((margin_x, y), line[:200], fontsize=10, color=(0.12, 0.12, 0.12))
-        y += 16
+        page.insert_text((margin_x, y), line[:200], fontname=font, fontsize=11, color=body_color)
+        y += 15
     pages = doc.page_count
     out = doc.tobytes(deflate=True)
     doc.close()

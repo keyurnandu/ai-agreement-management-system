@@ -1,0 +1,1 @@
+ALTER TABLE "ComplianceRulePack" ADD COLUMN "direction" TEXT NOT NULL DEFAULT 'ORG_BUYING';

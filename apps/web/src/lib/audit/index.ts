@@ -1,6 +1,8 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 
+export { auditRequestMeta } from "./request-meta";
+
 export interface AuditInput {
   action: string; // e.g. "document.upload", "agreement.send", "auth.login"
   actorId?: string | null;

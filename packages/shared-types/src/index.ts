@@ -27,4 +27,4 @@ export type RecipientStatus = "PENDING" | "SENT" | "VIEWED" | "SIGNED" | "DECLIN
 export type FieldType = "SIGNATURE" | "INITIAL" | "DATE" | "TEXT" | "CHECKBOX";
 
 /** AI provider identifiers understood by the intelligence service. */
-export type AIProviderKind = "mock" | "ollama" | "anthropic" | "openai";
+export type AIProviderKind = "mock" | "ollama" | "anthropic" | "openai" | "azure_openai";

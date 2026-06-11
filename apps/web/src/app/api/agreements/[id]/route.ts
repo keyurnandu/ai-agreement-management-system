@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { getManageableAgreement } from "@/lib/agreements";
 import { latestVersion } from "@/lib/documents";
 import { recordAudit } from "@/lib/audit";
+import { deleteAgreementHard } from "@/lib/delete-resources";
 import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -61,6 +62,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       width: f.width,
       height: f.height,
       required: f.required,
+      label: f.label,
     })),
   });
 }
@@ -99,5 +101,32 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     resourceId: id,
     metadata: data as Record<string, unknown>,
   });
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const session = await auth();
+  if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const actor = { id: session.user.id, role: session.user.role };
+
+  const { id } = await ctx.params;
+  const ag = await getManageableAgreement(actor, id);
+  if (!ag) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  try {
+    await deleteAgreementHard(id);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "cannot delete agreement";
+    return NextResponse.json({ error: msg }, { status: 409 });
+  }
+
+  await recordAudit({
+    action: "agreement.delete",
+    actorId: actor.id,
+    actorEmail: session.user.email,
+    resourceType: "AGREEMENT",
+    resourceId: id,
+  });
+
   return NextResponse.json({ ok: true });
 }

@@ -4,20 +4,25 @@ import { useState } from "react";
 
 type Risk = { title: string; severity: string; note: string };
 type Analysis = { summary: string; risks: Risk[]; obligations: string[]; key_dates: string[]; provider: string };
-type Ask = { answer: string; citations: { n: number; score: number; text: string }[]; provider: string };
 type Clause = { title: string; category: string; risk: string; text: string };
 type Finding = { clause: string; status: string; note: string; suggestion: string };
 
 const SEV: Record<string, string> = { high: "red", medium: "amber", low: "gray" };
 const STATUS: Record<string, string> = { MISSING: "red", DEVIATES: "amber", PRESENT: "green", MATCH: "green" };
 
-export function InsightsPanel({ documentId, versions = [] }: { documentId: string; versions?: number[] }) {
+export function InsightsPanel({
+  documentId,
+  versions = [],
+  embedded = false,
+}: {
+  documentId: string;
+  versions?: number[];
+  embedded?: boolean;
+}) {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [clauses, setClauses] = useState<Clause[] | null>(null);
   const [findings, setFindings] = useState<Finding[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [q, setQ] = useState("");
-  const [ans, setAns] = useState<Ask | null>(null);
   const [from, setFrom] = useState(versions[versions.length - 1] ?? 1);
   const [to, setTo] = useState(versions[0] ?? 1);
   const [diff, setDiff] = useState<string | null>(null);
@@ -36,9 +41,9 @@ export function InsightsPanel({ documentId, versions = [] }: { documentId: strin
   }
 
   return (
-    <div className="card">
+    <div className={embedded ? undefined : "card"}>
       <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
-        <h2 style={{ margin: 0 }}>AI insights</h2>
+        {!embedded ? <h2 style={{ margin: 0 }}>AI insights</h2> : null}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button className="btn" disabled={!!busy} onClick={() => run("a", async () => setAnalysis(await call(`/api/documents/${documentId}/analyze`, { method: "POST" })))}>
             {busy === "a" ? "Analyzing…" : "Analyze"}
@@ -119,24 +124,6 @@ export function InsightsPanel({ documentId, versions = [] }: { documentId: strin
           {diff ? <p style={{ fontSize: 13, whiteSpace: "pre-wrap", marginTop: 8 }}>{diff}</p> : null}
         </div>
       ) : null}
-
-      <div style={{ marginTop: 14, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
-        <h3 style={{ fontSize: 13, margin: "0 0 6px" }}>Ask about this document</h3>
-        <div style={{ display: "flex", gap: 8 }}>
-          <input className="input" placeholder="e.g. What is the governing law?" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") run("q", async () => setAns(await call(`/api/documents/${documentId}/ask`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question: q }) }))); }} />
-          <button className="btn" disabled={!!busy || !q.trim()} onClick={() => run("q", async () => setAns(await call(`/api/documents/${documentId}/ask`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question: q }) })))}>
-            {busy === "q" ? "…" : "Ask"}
-          </button>
-        </div>
-        {ans ? (
-          <div style={{ marginTop: 12 }}>
-            <p style={{ fontSize: 14, whiteSpace: "pre-wrap" }}>{ans.answer}</p>
-            {ans.citations.map((c) => (
-              <div key={c.n} className="muted" style={{ fontSize: 11, marginTop: 4 }}>[{c.n}] ({c.score}) {c.text}…</div>
-            ))}
-          </div>
-        ) : null}
-      </div>
     </div>
   );
 }

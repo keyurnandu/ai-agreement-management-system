@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { recordAudit } from "@/lib/audit";
 import { canAccessDocument } from "@/lib/documents";
+import { parseAttributeSource } from "@/lib/attribute-source";
+import { attributeAppliesToDocument } from "@/lib/attribute-document-filter";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +17,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   if (!(await canAccessDocument(actor, id, "VIEW"))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
+
+  const doc = await prisma.document.findUnique({
+    where: { id },
+    select: { commercialType: { select: { key: true, prefix: true } } },
+  });
 
   const defs = await prisma.attributeDefinition.findMany({
     where: { active: true, scope: { in: ["DOCUMENT", "BOTH"] } },
@@ -29,17 +36,30 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     if (!cur || (v.method === "MANUAL" && cur.method !== "MANUAL")) byDef.set(v.definitionId, v);
   }
 
+  const docKey = doc?.commercialType?.key ?? null;
+  const docPrefix = doc?.commercialType?.prefix ?? null;
+  const visibleDefs = defs.filter(
+    (d) => attributeAppliesToDocument(d.documentType, docKey, docPrefix) || byDef.has(d.id),
+  );
+
   return NextResponse.json({
-    attributes: defs.map((d) => {
+    documentType: docKey ?? docPrefix,
+    attributes: visibleDefs.map((d) => {
       const v = byDef.get(d.id);
+      const src = parseAttributeSource(v?.source);
       return {
         key: d.key,
         label: d.label,
         type: d.type,
+        group: d.group,
+        documentType: d.documentType,
         prompt: d.prompt,
         value: v?.value ?? null,
         confidence: v?.confidence ?? null,
         method: v?.method ?? null,
+        source: src
+          ? { page: src.page, snippet: src.snippet, start: src.start, end: src.end }
+          : null,
       };
     }),
   });

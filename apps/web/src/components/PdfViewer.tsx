@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState, type CSSProperties, type MouseEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
+import { useAttributeHighlight } from "@/components/AttributeHighlightContext";
 
 interface Props {
   documentId: string;
@@ -39,6 +40,8 @@ export function PdfViewer({
   fileUrl,
 }: Props) {
   const router = useRouter();
+  const { highlight, setHighlight } = useAttributeHighlight();
+  const highlightRef = useRef<HTMLDivElement>(null);
   const [page, setPage] = useState(1);
   const [pageCount, setPageCount] = useState(initialCount || 1);
   const [dpi, setDpi] = useState(144);
@@ -51,6 +54,17 @@ export function PdfViewer({
   const [formFields, setFormFields] = useState<FormFieldT[] | null>(null);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [formMsg, setFormMsg] = useState<string | null>(null);
+  const [hasFormFields, setHasFormFields] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    void fetch(`/api/documents/${documentId}/form-fields`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((j) => {
+        if (j) setHasFormFields(((j as { fields: FormFieldT[] }).fields?.length ?? 0) > 0);
+        else setHasFormFields(false);
+      })
+      .catch(() => setHasFormFields(false));
+  }, [documentId]);
 
   useEffect(() => setPageCount(initialCount || 1), [initialCount]);
   useEffect(() => setPage((p) => Math.min(Math.max(1, p), pageCount)), [pageCount]);
@@ -76,6 +90,34 @@ export function PdfViewer({
     const res = await fetch(`/api/documents/${documentId}/text`);
     if (res.ok) setText(((await res.json()) as { pages: TextPage[] }).pages);
   }
+
+  useEffect(() => {
+    if (!highlight) return;
+    setPage(highlight.page);
+    if (highlight.rect) {
+      setTab("page");
+      return;
+    }
+    if (highlight.formField) {
+      void loadForm();
+      setTab("form");
+      return;
+    }
+    setTab("text");
+    if (!text) {
+      void fetch(`/api/documents/${documentId}/text`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((j) => {
+          if (j) setText((j as { pages: TextPage[] }).pages);
+        });
+    }
+  }, [highlight, documentId, text]);
+
+  useEffect(() => {
+    if (!highlight || tab !== "text" || !text) return;
+    const t = window.setTimeout(() => highlightRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
+    return () => window.clearTimeout(t);
+  }, [highlight, tab, text]);
 
   async function applyOp(ops: unknown, note: string) {
     if (!canEdit || busy) return;
@@ -199,7 +241,7 @@ export function PdfViewer({
           <button className={tab === "comments" ? "btn" : "btn secondary"} onClick={() => setTab("comments")} title="Comments & annotations">
             Comments ({annotations.length})
           </button>
-          {canEdit ? (
+          {canEdit && hasFormFields ? (
             <button className={tab === "form" ? "btn" : "btn secondary"} onClick={loadForm} title="Fill form fields">
               Form
             </button>
@@ -214,6 +256,11 @@ export function PdfViewer({
 
       {(canEdit || canComment) && tab === "page" ? (
         <div className="row" style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)", ...tb }}>
+          {highlight?.rect && highlight.page === page ? (
+            <span className="pill" style={{ fontSize: 11, color: "var(--amber)", borderColor: "rgba(251,191,36,0.4)" }}>
+              Source highlight
+            </span>
+          ) : null}
           {canComment ? (
             <button
               className={commentMode ? "btn" : "btn secondary"}
@@ -269,6 +316,20 @@ export function PdfViewer({
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img key={imgSrc} src={imgSrc} alt={`page ${page}`} style={{ display: "block", maxWidth: "100%" }} />
+            {highlight?.rect && highlight.page === page ? (
+              <div
+                className="pdf-source-highlight"
+                title={highlight.snippet}
+                style={{
+                  position: "absolute",
+                  left: `${highlight.rect.x * 100}%`,
+                  top: `${highlight.rect.y * 100}%`,
+                  width: `${highlight.rect.w * 100}%`,
+                  height: `${highlight.rect.h * 100}%`,
+                  pointerEvents: "none",
+                }}
+              />
+            ) : null}
             {pagePins.map((a) => {
               const r = a.rect ?? { x: 0.5, y: 0.5, w: 0, h: 0 };
               const isBox = r.w > 0 && r.h > 0;
@@ -312,27 +373,66 @@ export function PdfViewer({
           </div>
         ) : tab === "text" ? (
           <div style={{ maxWidth: 760, margin: "0 auto", textAlign: "left" }}>
+            {highlight ? (
+              <div className="row" style={{ marginBottom: 12, justifyContent: "flex-start" }}>
+                <span className="pill" style={{ color: "var(--amber)", borderColor: "rgba(251,191,36,0.35)" }}>
+                  {highlight.rect ? `Highlighted on page ${highlight.page}` : `Text highlight p${highlight.page}`}
+                </span>
+                {highlight.rect ? (
+                  <button className="btn secondary" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => setTab("page")}>
+                    View on PDF
+                  </button>
+                ) : null}
+                <button className="btn secondary" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => setHighlight(null)}>
+                  Clear
+                </button>
+              </div>
+            ) : null}
             {!text ? (
               <p className="muted">Loading text…</p>
             ) : (
-              text.map((tp) => (
-                <div key={tp.page} style={{ marginBottom: 18 }}>
-                  <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
-                    page {tp.page}
-                  </div>
-                  <pre
+              text.map((tp) => {
+                const isTarget = highlight?.page === tp.page;
+                const start = isTarget ? highlight.start : undefined;
+                const end = isTarget ? highlight.end : undefined;
+                return (
+                  <div
+                    key={tp.page}
+                    id={`text-page-${tp.page}`}
+                    ref={isTarget ? highlightRef : undefined}
                     style={{
-                      whiteSpace: "pre-wrap",
-                      fontFamily: "ui-monospace, monospace",
-                      fontSize: 12,
-                      color: "var(--text)",
-                      margin: 0,
+                      marginBottom: 18,
+                      padding: isTarget ? 10 : 0,
+                      borderRadius: 8,
+                      outline: isTarget ? "1px solid rgba(251,191,36,0.45)" : undefined,
+                      background: isTarget ? "rgba(251,191,36,0.06)" : undefined,
                     }}
                   >
-                    {tp.text || "(no extractable text)"}
-                  </pre>
-                </div>
-              ))
+                    <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
+                      page {tp.page}
+                    </div>
+                    <pre
+                      style={{
+                        whiteSpace: "pre-wrap",
+                        fontFamily: "ui-monospace, monospace",
+                        fontSize: 12,
+                        color: "var(--text)",
+                        margin: 0,
+                      }}
+                    >
+                      {start != null && end != null && start < end ? (
+                        <>
+                          {tp.text.slice(0, start)}
+                          <mark className="attr-highlight">{tp.text.slice(start, end)}</mark>
+                          {tp.text.slice(end)}
+                        </>
+                      ) : (
+                        tp.text || "(no extractable text)"
+                      )}
+                    </pre>
+                  </div>
+                );
+              })
             )}
           </div>
         ) : tab === "comments" ? (
@@ -401,8 +501,20 @@ export function PdfViewer({
               <p className="muted">This PDF has no fillable form fields.</p>
             ) : (
               <>
-                {formFields.map((f, i) => (
-                  <div key={(f.name ?? "f") + i} style={{ marginBottom: 12 }}>
+                {formFields.map((f, i) => {
+                  const isHighlighted =
+                    highlight?.formField && f.name === highlight.formField && f.page === highlight.page;
+                  return (
+                  <div
+                    key={(f.name ?? "f") + i}
+                    style={{
+                      marginBottom: 12,
+                      padding: isHighlighted ? 8 : 0,
+                      borderRadius: 8,
+                      outline: isHighlighted ? "1px solid rgba(251,191,36,0.55)" : undefined,
+                      background: isHighlighted ? "rgba(251,191,36,0.08)" : undefined,
+                    }}
+                  >
                     <label className="label" style={{ marginTop: 0 }}>
                       {f.name} <span className="muted">({f.type}, p{f.page})</span>
                     </label>
@@ -412,7 +524,8 @@ export function PdfViewer({
                       onChange={(e) => setFormValues((v) => ({ ...v, [f.name ?? ""]: e.target.value }))}
                     />
                   </div>
-                ))}
+                  );
+                })}
                 <button className="btn" disabled={busy} onClick={saveForm} style={{ marginTop: 8 }}>
                   Save (new version)
                 </button>

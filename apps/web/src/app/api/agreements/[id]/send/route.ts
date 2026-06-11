@@ -3,7 +3,10 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { recordAudit } from "@/lib/audit";
 import { getManageableAgreement, newToken } from "@/lib/agreements";
+import { autoPlaceSignatureFields } from "@/lib/auto-signature-fields";
+import { signerHasStandardBlock } from "@/lib/signature-layout";
 import { env } from "@/env";
+import { sendSigningInvite } from "@/lib/adapters/email";
 
 export const dynamic = "force-dynamic";
 
@@ -17,18 +20,28 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   if (!ag) return NextResponse.json({ error: "not found" }, { status: 404 });
   if (ag.status !== "DRAFT") return NextResponse.json({ error: "agreement already sent" }, { status: 409 });
 
-  const recipients = await prisma.recipient.findMany({ where: { agreementId: id } });
-  const fields = await prisma.field.findMany({ where: { agreementId: id } });
+  let recipients = await prisma.recipient.findMany({ where: { agreementId: id } });
+  let fields = await prisma.field.findMany({ where: { agreementId: id } });
 
   const signers = recipients.filter((r) => r.role === "SIGNER" || r.role === "APPROVER");
   if (signers.length === 0) {
     return NextResponse.json({ error: "add at least one signer or approver" }, { status: 400 });
   }
-  const recipientsWithFields = new Set(fields.map((f) => f.recipientId).filter(Boolean) as string[]);
-  const missing = signers.filter((s) => !recipientsWithFields.has(s.id));
+
+  const needsAuto = signers.some((s) => !signerHasStandardBlock(fields, s.id));
+  if (needsAuto) {
+    try {
+      await autoPlaceSignatureFields(id, actor.id);
+      fields = await prisma.field.findMany({ where: { agreementId: id } });
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : "auto-place failed" }, { status: 400 });
+    }
+  }
+
+  const missing = signers.filter((s) => !signerHasStandardBlock(fields, s.id));
   if (missing.length) {
     return NextResponse.json(
-      { error: `these signers have no fields placed: ${missing.map((m) => m.email).join(", ")}` },
+      { error: `incomplete signature blocks for: ${missing.map((m) => m.email).join(", ")}` },
       { status: 400 },
     );
   }
@@ -45,6 +58,24 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   }
 
   await prisma.agreement.update({ where: { id }, data: { status: "SENT", sentAt: new Date() } });
+
+  const updated = await prisma.recipient.findMany({ where: { agreementId: id }, orderBy: { routingOrder: "asc" } });
+  const base = env.APP_BASE_URL.replace(/\/$/, "");
+
+  for (const r of updated) {
+    if (r.role === "CC" || !r.accessToken) continue;
+    const signUrl = `${base}/sign/${r.accessToken}`;
+    try {
+      await sendSigningInvite({
+        to: r.email,
+        agreementTitle: ag.title,
+        signUrl,
+      });
+    } catch {
+      /* email optional */
+    }
+  }
+
   await recordAudit({
     action: "agreement.send",
     actorId: actor.id,
@@ -54,7 +85,6 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
     metadata: { recipients: recipients.length, routingType: ag.routingType },
   });
 
-  const updated = await prisma.recipient.findMany({ where: { agreementId: id }, orderBy: { routingOrder: "asc" } });
   return NextResponse.json({
     status: "SENT",
     recipients: updated.map((r) => ({

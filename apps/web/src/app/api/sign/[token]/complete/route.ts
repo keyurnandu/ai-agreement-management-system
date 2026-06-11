@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { recordAudit } from "@/lib/audit";
+import { recordAudit, auditRequestMeta } from "@/lib/audit";
 import { advanceRouting, enforceExpiry, maybeFinalizeAgreement } from "@/lib/agreements";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +29,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   for (const f of myFields) {
     const v = values[f.id];
     if (f.required && (v === undefined || !String(v).trim())) {
-      return NextResponse.json({ error: `missing required ${f.type} field` }, { status: 400 });
+      const label = f.label ?? f.type.toLowerCase();
+      return NextResponse.json({ error: `Please complete required field: ${label}` }, { status: 400 });
     }
   }
   for (const f of myFields) {
@@ -43,9 +44,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     actorEmail: r.email,
     resourceType: "AGREEMENT",
     resourceId: r.agreementId,
-    ip: req.headers.get("x-forwarded-for"),
-    userAgent: req.headers.get("user-agent"),
     metadata: { recipientId: r.id, fields: myFields.length },
+    ...auditRequestMeta(req),
   });
 
   await advanceRouting(r.agreementId);

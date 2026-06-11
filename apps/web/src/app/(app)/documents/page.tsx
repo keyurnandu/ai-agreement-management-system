@@ -2,7 +2,8 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { roleAtLeast } from "@/lib/rbac";
-import { UploadButton } from "@/components/UploadButton";
+import { DocumentsHierarchy } from "@/components/DocumentsHierarchy";
+import { DocumentsPageActions } from "@/components/DocumentsPageActions";
 
 export const dynamic = "force-dynamic";
 
@@ -19,9 +20,26 @@ export default async function DocumentsPage() {
     where,
     include: {
       owner: { select: { email: true } },
+      commercialType: true,
       versions: { orderBy: { version: "desc" }, take: 1 },
     },
-    orderBy: { updatedAt: "desc" },
+    orderBy: [{ commercialId: "asc" }, { updatedAt: "desc" }],
+  });
+
+  const initialDocs = docs.map((d) => {
+    const v = d.versions[0];
+    return {
+      id: d.id,
+      commercialId: d.commercialId,
+      kind: d.kind,
+      collectionParentId: d.collectionParentId,
+      typePrefix: d.commercialType?.prefix ?? null,
+      title: d.title,
+      ownerEmail: d.owner.email,
+      pageCount: v?.pageCount ?? (d.kind === "COLLECTION" ? "—" : 0),
+      version: v?.version ?? 0,
+      updatedAt: d.updatedAt.toLocaleString(),
+    };
   });
 
   return (
@@ -32,53 +50,14 @@ export default async function DocumentsPage() {
             ← dashboard
           </Link>
           <h1 style={{ marginTop: 6 }}>Documents</h1>
+          <p className="muted" style={{ fontSize: 13 }}>
+            PDF library &amp; collections — separate from Deals and Contracts. Use DCOL folders to group DPDF files.
+          </p>
         </div>
-        <UploadButton />
+        <DocumentsPageActions />
       </div>
 
-      {docs.length === 0 ? (
-        <div className="card">
-          <p className="muted">No documents yet. Upload a PDF to get started.</p>
-        </div>
-      ) : (
-        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-            <thead>
-              <tr style={{ textAlign: "left", color: "var(--muted)", fontSize: 12 }}>
-                <th style={{ padding: "12px 16px" }}>Title</th>
-                <th style={{ padding: "12px 16px" }}>Owner</th>
-                <th style={{ padding: "12px 16px" }}>Pages</th>
-                <th style={{ padding: "12px 16px" }}>Version</th>
-                <th style={{ padding: "12px 16px" }}>Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {docs.map((d) => {
-                const v = d.versions[0];
-                return (
-                  <tr key={d.id} style={{ borderTop: "1px solid var(--border)" }}>
-                    <td style={{ padding: "12px 16px" }}>
-                      <Link href={`/documents/${d.id}`}>{d.title}</Link>
-                    </td>
-                    <td style={{ padding: "12px 16px" }} className="muted">
-                      {d.owner.email}
-                    </td>
-                    <td style={{ padding: "12px 16px" }} className="muted">
-                      {v?.pageCount ?? "—"}
-                    </td>
-                    <td style={{ padding: "12px 16px" }} className="muted">
-                      v{v?.version ?? 1}
-                    </td>
-                    <td style={{ padding: "12px 16px" }} className="muted">
-                      {d.updatedAt.toLocaleString()}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DocumentsHierarchy initialDocs={initialDocs} isAdmin={roleAtLeast(role, "ADMIN")} />
     </div>
   );
 }

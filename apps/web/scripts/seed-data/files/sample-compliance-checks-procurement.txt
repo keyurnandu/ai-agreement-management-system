@@ -1,0 +1,24 @@
+Demo Corp Inc. — Standard vendor contract review checklist
+Use with Deals → Procurement → Run compliance check
+
+1. LIABILITY
+   Vendor liability cap must not exceed fees paid in the twelve months before the claim.
+   Carve-outs required for IP infringement, confidentiality breach, and data breach.
+
+2. SECURITY & COMPLIANCE
+   Vendor must maintain SOC 2 Type II or equivalent certification.
+   GDPR and CCPA compliance required where personal data is processed.
+
+3. PAYMENT & AUDIT
+   Payment terms: net 60 days unless strategic vendor exception documented.
+   Customer audit rights: once per year on reasonable notice.
+
+4. TERMINATION
+   Termination for convenience: maximum 90 days written notice.
+   Confidentiality survives termination for at least five (5) years.
+
+5. INSURANCE
+   Commercial general liability minimum $2M per occurrence.
+
+6. GOVERNING LAW
+   State of Delaware preferred; document exceptions in negotiation issues.

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { recordAudit, auditRequestMeta } from "@/lib/audit";
+import { deleteContractHard } from "@/lib/delete-resources";
 import { roleAtLeast } from "@/lib/rbac";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +15,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   const c = await prisma.contract.findUnique({
     where: { id },
-    include: { clauses: { orderBy: { order: "asc" } }, template: { select: { name: true } } },
+    include: {
+      clauses: { orderBy: { order: "asc" } },
+      template: { select: { name: true } },
+      commercialType: { select: { id: true, key: true, prefix: true, name: true, direction: true } },
+    },
   });
   if (!c) return NextResponse.json({ error: "not found" }, { status: 404 });
   if (!(roleAtLeast(actor.role, "MANAGER") || c.createdById === actor.id)) {
@@ -32,6 +38,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     id: c.id,
     title: c.title,
     status: c.status,
+    commercialId: c.commercialId,
+    commercialTypeId: c.commercialTypeId,
+    commercialType: c.commercialType,
+    parentContractId: c.parentContractId,
     template: c.template?.name ?? null,
     documentId: c.documentId,
     variables: c.variables,
@@ -45,4 +55,32 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       fallbackLabels: cl.sourceClauseId ? labelsById.get(cl.sourceClauseId) ?? [] : [],
     })),
   });
+}
+
+export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const session = await auth();
+  if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!roleAtLeast(session.user.role, "ADMIN")) {
+    return NextResponse.json({ error: "admin access required to delete contracts" }, { status: 403 });
+  }
+
+  const { id } = await ctx.params;
+  try {
+    await deleteContractHard(id);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "cannot delete contract";
+    const status = msg.includes("not found") ? 404 : 409;
+    return NextResponse.json({ error: msg }, { status });
+  }
+
+  await recordAudit({
+    action: "contract.delete",
+    actorId: session.user.id,
+    actorEmail: session.user.email,
+    resourceType: "CONTRACT",
+    resourceId: id,
+    ...auditRequestMeta(req),
+  });
+
+  return NextResponse.json({ ok: true });
 }

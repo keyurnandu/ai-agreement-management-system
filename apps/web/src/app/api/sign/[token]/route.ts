@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { recordAudit } from "@/lib/audit";
+import { recordAudit, auditRequestMeta } from "@/lib/audit";
 import { latestVersion } from "@/lib/documents";
 import { enforceExpiry } from "@/lib/agreements";
 
 export const dynamic = "force-dynamic";
 
 // Public, token-gated. Returns what this recipient needs to sign.
-export async function GET(_req: Request, ctx: { params: Promise<{ token: string }> }) {
+export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
   const r = await prisma.recipient.findUnique({
     where: { accessToken: token },
@@ -16,6 +16,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
   if (!r) return NextResponse.json({ error: "invalid or expired link" }, { status: 404 });
 
   const ag = r.agreement;
+  if (ag.status === "VOIDED") {
+    return NextResponse.json({ error: "this agreement has been voided" }, { status: 410 });
+  }
   const expired = await enforceExpiry(ag);
   const myFields = await prisma.field.findMany({ where: { agreementId: ag.id, recipientId: r.id } });
   const version = await latestVersion(ag.documentId);
@@ -32,6 +35,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
       resourceType: "AGREEMENT",
       resourceId: ag.id,
       metadata: { recipientId: r.id },
+      ...auditRequestMeta(req),
     });
   }
 
@@ -55,6 +59,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
       width: f.width,
       height: f.height,
       required: f.required,
+      label: f.label,
       value: f.value,
     })),
   });

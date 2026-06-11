@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState, type ChangeEvent } from "react";
 
-export function UploadButton() {
+export function UploadButton({ collectionParentId }: { collectionParentId?: string }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -18,6 +18,7 @@ export function UploadButton() {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("title", file.name.replace(/\.pdf$/i, ""));
+      if (collectionParentId) fd.append("collectionParentId", collectionParentId);
       const res = await fetch("/api/documents", { method: "POST", body: fd });
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string };
@@ -37,7 +38,7 @@ export function UploadButton() {
     <span>
       <input ref={inputRef} type="file" accept="application/pdf" hidden onChange={onChange} />
       <button className="btn" disabled={busy} onClick={() => inputRef.current?.click()}>
-        {busy ? "Uploading…" : "Upload PDF"}
+        {busy ? "Uploading…" : collectionParentId ? "Upload PDF to collection" : "Upload PDF"}
       </button>
       {error ? (
         <span className="error" style={{ marginLeft: 10 }}>

@@ -7,7 +7,7 @@ import type { NextAuthConfig } from "next-auth";
  */
 // Public (unauthenticated) areas. The signing ceremony is token-gated, not session-gated.
 // /api/v1 is the external API (API-key auth, enforced per-route) — not session-gated.
-const PUBLIC_PREFIXES = ["/login", "/api/health", "/api/auth", "/sign", "/api/sign", "/api/v1"];
+const PUBLIC_PREFIXES = ["/login", "/api/health", "/api/auth", "/sign", "/api/sign", "/vendor", "/api/vendor", "/api/v1"];
 
 export const authConfig = {
   trustHost: true,

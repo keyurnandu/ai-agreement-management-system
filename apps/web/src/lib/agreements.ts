@@ -21,6 +21,29 @@ export async function getManageableAgreement(actor: Actor, agreementId: string) 
   return (await canAccessDocument(actor, ag.documentId, "MANAGE")) ? ag : null;
 }
 
+const VOIDABLE_STATUSES = ["SENT", "IN_PROGRESS", "COMPLETED"] as const;
+
+/** Cancel a sent or completed agreement so linked deals/documents can be removed. */
+export async function voidAgreement(agreementId: string): Promise<void> {
+  const ag = await prisma.agreement.findUnique({ where: { id: agreementId } });
+  if (!ag) throw new Error("agreement not found");
+  if (ag.status === "VOIDED") throw new Error("agreement is already voided");
+  if (ag.status === "DRAFT") throw new Error("delete a draft agreement instead of voiding");
+  if (!VOIDABLE_STATUSES.includes(ag.status as (typeof VOIDABLE_STATUSES)[number])) {
+    throw new Error(`Cannot void agreement in ${ag.status} status`);
+  }
+
+  await prisma.agreement.update({ where: { id: agreementId }, data: { status: "VOIDED" } });
+  await prisma.recipient.updateMany({
+    where: { agreementId, status: { notIn: ["SIGNED", "DECLINED"] } },
+    data: { accessToken: null },
+  });
+}
+
+export function agreementCanVoid(status: string): boolean {
+  return VOIDABLE_STATUSES.includes(status as (typeof VOIDABLE_STATUSES)[number]);
+}
+
 /** Flips an agreement to EXPIRED if its expiry has passed. Returns true if it is (now) expired. */
 export async function enforceExpiry(ag: { id: string; status: string; expiresAt: Date | null }): Promise<boolean> {
   const open = ag.status !== "COMPLETED" && ag.status !== "DECLINED" && ag.status !== "EXPIRED";
@@ -48,6 +71,73 @@ export async function advanceRouting(agreementId: string): Promise<void> {
   }
 }
 
+function fieldValue(
+  fields: { recipientId: string | null; type: string; label: string | null; value: string | null }[],
+  recipientId: string,
+  type: string,
+  label?: string,
+): string | null {
+  const f = fields.find(
+    (x) =>
+      x.recipientId === recipientId &&
+      x.type === type &&
+      (label === undefined || x.label === label) &&
+      x.value?.trim(),
+  );
+  return f?.value?.trim() ?? null;
+}
+
+function buildCompletionCertificate(
+  ag: { id: string; title: string; documentId: string; routingType: string },
+  recipients: {
+    id: string;
+    email: string;
+    name: string | null;
+    role: string;
+    status: string;
+    signedAt: Date | null;
+  }[],
+  fields: { recipientId: string | null; type: string; label: string | null; value: string | null }[],
+  signEvents: { ip: string | null; userAgent: string | null; createdAt: Date; metadata: unknown }[],
+): string[] {
+  const signers = recipients.filter((r) => r.role === "SIGNER" || r.role === "APPROVER");
+  const lines = [
+    "CERTIFICATE OF COMPLETION",
+    "",
+    `Agreement: ${ag.title}`,
+    `Document ID: ${ag.documentId}`,
+    `Agreement ID: ${ag.id}`,
+    `Routing: ${ag.routingType}`,
+    `Completed (UTC): ${new Date().toISOString()}`,
+    "",
+    "── Signatory audit trail ──",
+  ];
+
+  for (const r of signers) {
+    const ev = signEvents.find(
+      (e) => (e.metadata as { recipientId?: string } | null)?.recipientId === r.id,
+    );
+    const printedName = fieldValue(fields, r.id, "TEXT", "Name") ?? r.name ?? "—";
+    const title = fieldValue(fields, r.id, "TEXT", "Title") ?? "—";
+    const date = fieldValue(fields, r.id, "DATE", "Date") ?? "—";
+    const signed = r.signedAt ? r.signedAt.toISOString() : "—";
+
+    lines.push("");
+    lines.push(`Signer: ${r.email} (${r.role})`);
+    lines.push(`  Printed name: ${printedName}`);
+    lines.push(`  Title: ${title}`);
+    lines.push(`  Date signed: ${date}`);
+    lines.push(`  Timestamp (UTC): ${signed}`);
+    lines.push(`  IP address: ${ev?.ip?.trim() || "not recorded"}`);
+    lines.push(`  User agent: ${ev?.userAgent?.trim() || "not recorded"}`);
+    if (ev) lines.push(`  Audit recorded (UTC): ${ev.createdAt.toISOString()}`);
+  }
+
+  lines.push("");
+  lines.push("This certificate was appended automatically upon completion.");
+  return lines;
+}
+
 /** If every SIGNER/APPROVER has signed, stamp the values into a new signed PDF version and complete. */
 export async function maybeFinalizeAgreement(agreementId: string): Promise<boolean> {
   const ag = await prisma.agreement.findUnique({
@@ -73,7 +163,7 @@ export async function maybeFinalizeAgreement(agreementId: string): Promise<boole
       label:
         f.type === "SIGNATURE"
           ? `Signed by ${recipientById.get(f.recipientId ?? "")?.email ?? "recipient"}`
-          : undefined,
+          : f.label ?? undefined,
     }));
 
   const current = await latestVersion(ag.documentId);
@@ -82,32 +172,13 @@ export async function maybeFinalizeAgreement(agreementId: string): Promise<boole
   const bytes = await loadVersionBytes(current.storageKey);
   const { pdf: stamped } = await pdfEngine.stamp(bytes, current.originalFilename ?? undefined, stamps);
 
-  // Certificate of completion (appended as a final page).
   const signEvents = await prisma.auditEvent.findMany({
     where: { resourceId: agreementId, action: "recipient.sign" },
+    orderBy: { createdAt: "asc" },
   });
-  const ipByRecipient = new Map<string, string>();
-  for (const e of signEvents) {
-    const rid = (e.metadata as { recipientId?: string } | null)?.recipientId;
-    if (rid && e.ip) ipByRecipient.set(rid, e.ip);
-  }
-  const lines = [
-    `Agreement: ${ag.title}`,
-    `Document ID: ${ag.documentId}`,
-    `Routing: ${ag.routingType}`,
-    `Completed: ${new Date().toISOString()}`,
-    "",
-    "Recipients:",
-    ...ag.recipients.map(
-      (r) =>
-        `  - ${r.email} (${r.role}) - ${r.status}` +
-        (r.signedAt ? ` at ${new Date(r.signedAt).toISOString()}` : "") +
-        (ipByRecipient.get(r.id) ? ` | IP ${ipByRecipient.get(r.id)}` : ""),
-    ),
-    "",
-    `Certificate ID: ${agreementId}`,
-  ];
-  const { pdf: cert } = await pdfEngine.textPage("Certificate of Completion", lines);
+
+  const certLines = buildCompletionCertificate(ag, ag.recipients, ag.fields, signEvents);
+  const { pdf: cert } = await pdfEngine.textPage("Certificate of Completion", certLines);
   const { pdf: final, pageCount } = await pdfEngine.merge([
     { bytes: stamped, filename: "signed.pdf" },
     { bytes: cert, filename: "certificate.pdf" },
@@ -132,6 +203,12 @@ export async function maybeFinalizeAgreement(agreementId: string): Promise<boole
     where: { id: agreementId },
     data: { status: "COMPLETED", completedAt: new Date() },
   });
+
+  const linkedDeal = await prisma.deal.findFirst({ where: { agreementId } });
+  if (linkedDeal && linkedDeal.status === "SIGNING") {
+    await prisma.deal.update({ where: { id: linkedDeal.id }, data: { status: "COMPLETED" } });
+  }
+
   await recordAudit({
     action: "agreement.completed",
     resourceType: "AGREEMENT",

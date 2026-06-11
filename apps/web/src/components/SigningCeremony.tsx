@@ -6,6 +6,7 @@ import { SignaturePad } from "@/components/SignaturePad";
 type Field = {
   id: string;
   type: string;
+  label: string | null;
   page: number;
   x: number;
   y: number;
@@ -45,6 +46,7 @@ export function SigningCeremony({ token }: { token: string }) {
       for (const f of j.fields) {
         if (f.value) init[f.id] = f.value;
         else if (f.type === "DATE") init[f.id] = new Date().toISOString().slice(0, 10);
+        else if (f.label === "Name" && j.recipient.name) init[f.id] = j.recipient.name;
       }
       setValues(init);
     } else {
@@ -96,7 +98,8 @@ export function SigningCeremony({ token }: { token: string }) {
   async function submit() {
     for (const f of p!.fields) {
       if (f.required && !(values[f.id] ?? "").trim()) {
-        setErr(`Please complete the ${f.type.toLowerCase()} field on page ${f.page}.`);
+        const label = f.label ?? f.type.toLowerCase();
+        setErr(`Please complete required field: ${label} (page ${f.page}).`);
         setPage(f.page);
         return;
       }
@@ -228,7 +231,10 @@ export function SigningCeremony({ token }: { token: string }) {
                     type={f.type === "DATE" ? "date" : "text"}
                     className={`sigfield${f.type === "SIGNATURE" ? " sig" : ""}`}
                     value={v}
-                    placeholder={f.type === "SIGNATURE" ? "Type name to sign" : f.type === "INITIAL" ? "Initials" : f.type}
+                    placeholder={
+                      f.label ??
+                      (f.type === "SIGNATURE" ? "Type name to sign" : f.type === "INITIAL" ? "Initials" : f.type)
+                    }
                     onChange={(e) => setValues((s) => ({ ...s, [f.id]: e.target.value }))}
                     style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
                   />

@@ -6,6 +6,11 @@ import { pdfEngine } from "@/lib/services/client";
 import { recordAudit } from "@/lib/audit";
 import { emitEvent } from "@/lib/webhooks";
 import { documentStorageKey } from "@/lib/documents";
+import {
+  allocateCommercialId,
+  getCommercialTypeByKey,
+  validateParentForType,
+} from "@/lib/commercial-types";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +21,7 @@ export async function POST(req: Request) {
   const form = await req.formData();
   const file = form.get("file");
   const title = String(form.get("title") ?? "").trim();
+  const collectionParentId = String(form.get("collectionParentId") ?? "").trim() || null;
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "file is required" }, { status: 400 });
@@ -28,9 +34,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "file is not a valid PDF" }, { status: 415 });
   }
 
+  const dpdfType = await getCommercialTypeByKey("dpdf");
+  if (collectionParentId && dpdfType) {
+    const check = await validateParentForType(collectionParentId, dpdfType.id, "DOCUMENT");
+    if (!check.ok) return NextResponse.json({ error: check.error }, { status: 400 });
+  }
+
+  const commercialId = dpdfType ? await allocateCommercialId(dpdfType.prefix) : null;
+
   const doc = await prisma.document.create({
     data: {
       title: title || file.name.replace(/\.pdf$/i, "") || "Untitled",
+      kind: "FILE",
+      commercialId,
+      commercialTypeId: dpdfType?.id ?? null,
+      collectionParentId,
       ownerId: session.user.id,
     },
   });

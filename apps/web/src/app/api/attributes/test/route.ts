@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  if (!roleAtLeast(session.user.role, "MANAGER")) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (!roleAtLeast(session.user.role, "EDITOR")) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const b = (await req.json()) as {
     label?: string;

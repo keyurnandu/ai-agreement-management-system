@@ -21,10 +21,14 @@ class Settings(BaseSettings):
     service_jwt_secret: str = "dev-shared-service-secret-change-me"
 
     # AI provider selection
-    ai_provider: str = "mock"  # mock | ollama | anthropic | openai
+    ai_provider: str = "mock"  # mock | ollama | anthropic | openai | azure_openai
     ai_model: str = ""
     anthropic_api_key: str = ""
     openai_api_key: str = ""
+    azure_openai_api_key: str = ""
+    azure_openai_endpoint: str = ""
+    azure_openai_api_version: str = "2024-08-01-preview"
+    azure_openai_embedding_deployment: str = ""
     ollama_base_url: str = "http://localhost:11434"
 
     # Vector store (RAG)

@@ -11,7 +11,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const actor = { id: session.user.id, role: session.user.role };
-  if (!roleAtLeast(actor.role, "MANAGER")) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (!roleAtLeast(actor.role, "EDITOR")) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const { id } = await ctx.params;
   const b = (await req.json()) as Record<string, unknown>;

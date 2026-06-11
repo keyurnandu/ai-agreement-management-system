@@ -43,6 +43,27 @@ class OpenAIEmbedder:
             return [d["embedding"] for d in r.json()["data"]]
 
 
+class AzureOpenAIEmbedder:
+    name = "azure_openai"
+
+    def __init__(self, api_key: str, endpoint: str, deployment: str, api_version: str) -> None:
+        self.api_key = api_key
+        self.endpoint = endpoint.rstrip("/")
+        self.deployment = deployment
+        self.api_version = api_version
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        url = (
+            f"{self.endpoint}/openai/deployments/{self.deployment}/embeddings"
+            f"?api-version={self.api_version}"
+        )
+        headers = {"api-key": self.api_key, "content-type": "application/json"}
+        async with httpx.AsyncClient(timeout=60) as client:
+            r = await client.post(url, headers=headers, json={"input": texts})
+            r.raise_for_status()
+            return [d["embedding"] for d in r.json()["data"]]
+
+
 class OllamaEmbedder:
     name = "ollama"
 
@@ -67,6 +88,15 @@ def get_embedder():
     p = (s.embedding_provider or "mock").lower()
     if p == "openai" and s.openai_api_key:
         return OpenAIEmbedder(s.openai_api_key)
+    if p == "azure_openai" and s.azure_openai_api_key and s.azure_openai_endpoint:
+        deployment = s.azure_openai_embedding_deployment or s.ai_model
+        if deployment:
+            return AzureOpenAIEmbedder(
+                s.azure_openai_api_key,
+                s.azure_openai_endpoint,
+                deployment,
+                s.azure_openai_api_version,
+            )
     if p == "ollama":
         return OllamaEmbedder(s.ollama_base_url, s.ai_model)
     return MockEmbedder()

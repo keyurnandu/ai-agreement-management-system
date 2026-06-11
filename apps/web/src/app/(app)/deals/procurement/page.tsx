@@ -1,0 +1,47 @@
+import Link from "next/link";
+import { DealsList } from "@/components/DealsList";
+import { DirectionTabs } from "@/components/DirectionTabs";
+import { HelpLink } from "@/components/HelpLink";
+import { VendorWorkflowGuide } from "@/components/VendorWorkflowGuide";
+
+export const dynamic = "force-dynamic";
+
+export default function ProcurementDealsPage() {
+  return (
+    <div className="container">
+      <div className="row" style={{ marginBottom: 12 }}>
+        <div>
+          <h1 style={{ marginBottom: 4 }}>Deals</h1>
+          <p className="muted" style={{ fontSize: 14 }}>
+            Live workflow with vendors — portal, paper upload, compliance, sign. Tail spend: standalone POR deals.{" "}
+            <HelpLink />
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Link className="btn secondary" href="/deals/tail-spend">
+            Quick tail spend
+          </Link>
+          <Link className="btn" href="/deals/new?direction=ORG_BUYING&from=/deals/procurement">
+            New procurement deal
+          </Link>
+        </div>
+      </div>
+
+      <DirectionTabs
+        activeId="procurement"
+        tabs={[
+          { id: "sales", label: "Sales", href: "/deals/sales", direction: "ORG_SELLING" },
+          { id: "procurement", label: "Procurement", href: "/deals/procurement", direction: "ORG_BUYING" },
+        ]}
+      />
+
+      <div style={{ marginTop: 16 }}>
+        <VendorWorkflowGuide direction="ORG_BUYING" />
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <DealsList direction="ORG_BUYING" />
+      </div>
+    </div>
+  );
+}

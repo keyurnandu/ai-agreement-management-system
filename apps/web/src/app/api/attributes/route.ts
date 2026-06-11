@@ -7,7 +7,7 @@ import { roleAtLeast } from "@/lib/rbac";
 
 export const dynamic = "force-dynamic";
 
-const TYPES = ["TEXT", "DATE", "NUMBER", "BOOLEAN", "ENUM"];
+const TYPES = ["TEXT", "MULTILINE", "JSON", "TABLE", "DATE", "NUMBER", "BOOLEAN", "ENUM"];
 const MODES = ["STRICT", "FLEXIBLE"];
 
 function slugKey(label: string): string {
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const actor = { id: session.user.id, role: session.user.role };
-  if (!roleAtLeast(actor.role, "MANAGER")) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (!roleAtLeast(actor.role, "EDITOR")) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const b = (await req.json()) as Record<string, unknown>;
   const label = String(b.label ?? "").trim();

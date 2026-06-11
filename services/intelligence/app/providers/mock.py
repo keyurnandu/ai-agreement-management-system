@@ -22,7 +22,7 @@ class MockProvider(AIProvider):
             f"- system prompt: {'set' if system else 'none'}\n"
             f"- prompt size: {len(prompt)} chars / {len(words)} words\n"
             f"- preview: {preview}\n\n"
-            "Set AI_PROVIDER=ollama|anthropic|openai (and the matching key/URL) in .env for real output."
+            "Set AI_PROVIDER=ollama|anthropic|openai|azure_openai (and the matching key/URL) in .env for real output."
         )
         return Completion(text=text, model=self.model, provider=self.name)
 

@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { recordAudit } from "@/lib/audit";
 import { roleAtLeast } from "@/lib/rbac";
+import { TEMPLATE_KEY_BY_TYPE } from "@/lib/template-defaults";
 
 export const dynamic = "force-dynamic";
 
@@ -20,16 +21,21 @@ export async function GET(req: Request) {
   });
 
   return NextResponse.json({
-    templates: tpls.map((t) => ({
-      id: t.id,
-      key: t.key,
-      name: t.name,
-      description: t.description,
-      variables: t.variables,
-      clauses: t._count.clauses,
-      active: t.active,
-      updatedAt: t.updatedAt,
-    })),
+    templates: tpls.map((t) => {
+      const commercialTypeKey =
+        Object.entries(TEMPLATE_KEY_BY_TYPE).find(([, v]) => v === t.key)?.[0] ?? null;
+      return {
+        id: t.id,
+        key: t.key,
+        name: t.name,
+        description: t.description,
+        variables: t.variables,
+        clauses: t._count.clauses,
+        active: t.active,
+        commercialTypeKey,
+        updatedAt: t.updatedAt,
+      };
+    }),
   });
 }
 

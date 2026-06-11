@@ -56,4 +56,12 @@ export const env = {
   SERVICE_JWT_SECRET: process.env.SERVICE_JWT_SECRET ?? "dev-shared-service-secret-change-me",
   PDF_ENGINE_URL: process.env.PDF_ENGINE_URL ?? "http://localhost:8001",
   INTELLIGENCE_URL: process.env.INTELLIGENCE_URL ?? "http://localhost:8002",
+
+  EMAIL_PROVIDER: process.env.EMAIL_PROVIDER ?? "console",
+  EMAIL_FROM: process.env.EMAIL_FROM ?? "noreply@contract-platform.local",
+  SMTP_HOST: process.env.SMTP_HOST ?? "",
+  SMTP_PORT: process.env.SMTP_PORT ?? "587",
+  SMTP_SECURE: process.env.SMTP_SECURE ?? "false",
+  SMTP_USER: process.env.SMTP_USER ?? "",
+  SMTP_PASS: process.env.SMTP_PASS ?? "",
 } as const;

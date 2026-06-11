@@ -121,6 +121,19 @@ export const pdfEngine = {
     return (await res.json()) as ExtractedText;
   },
 
+  async searchText(
+    bytes: Buffer | Uint8Array,
+    filename: string | undefined,
+    query: string,
+    page = 0,
+  ): Promise<{ hits: { page: number; x: number; y: number; w: number; h: number }[] }> {
+    const form = pdfForm(bytes, filename);
+    form.append("query", query);
+    form.append("page", String(page));
+    const res = await postForm(env.PDF_ENGINE_URL, "/pdf/search-text", form, "pdf.extract");
+    return (await res.json()) as { hits: { page: number; x: number; y: number; w: number; h: number }[] };
+  },
+
   async render(
     bytes: Buffer | Uint8Array,
     filename: string | undefined,
@@ -205,6 +218,49 @@ export const pdfEngine = {
     form.append("stamps", JSON.stringify(stamps));
     const res = await postForm(env.PDF_ENGINE_URL, "/pdf/stamp", form, "pdf.stamp");
     return { pdf: Buffer.from(await res.arrayBuffer()), pageCount: Number(res.headers.get("X-Page-Count") ?? 0) };
+  },
+
+  async applyBranding(
+    bytes: Buffer | Uint8Array,
+    filename: string | undefined,
+    opts: { header?: string; footer?: string; logoB64?: string },
+  ): Promise<{ pdf: Buffer; pageCount: number }> {
+    const form = pdfForm(bytes, filename);
+    if (opts.header) form.append("header", opts.header);
+    if (opts.footer) form.append("footer", opts.footer);
+    if (opts.logoB64) form.append("logo_b64", opts.logoB64);
+    const res = await postForm(env.PDF_ENGINE_URL, "/pdf/apply-branding", form, "pdf.branding");
+    return { pdf: Buffer.from(await res.arrayBuffer()), pageCount: Number(res.headers.get("X-Page-Count") ?? 0) };
+  },
+
+  async fromHtml(html: string, title?: string): Promise<{ pdf: Buffer; pageCount: number }> {
+    const token = await serviceToken("system", "pdf.fromhtml");
+    const form = new FormData();
+    form.append("html", html);
+    form.append("title", title ?? "");
+    const res = await fetch(`${env.PDF_ENGINE_URL}/pdf/from-html`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: form,
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`pdf-engine /pdf/from-html failed: ${res.status} ${await res.text()}`);
+    return { pdf: Buffer.from(await res.arrayBuffer()), pageCount: Number(res.headers.get("X-Page-Count") ?? 1) };
+  },
+
+  async contractDocument(html: string, css?: string): Promise<{ pdf: Buffer; pageCount: number }> {
+    const token = await serviceToken("system", "pdf.contract");
+    const res = await fetch(`${env.PDF_ENGINE_URL}/pdf/contract-document`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ html, css: css ?? null }),
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`pdf-engine /pdf/contract-document failed: ${res.status} ${await res.text()}`);
+    return {
+      pdf: Buffer.from(await res.arrayBuffer()),
+      pageCount: Number(res.headers.get("X-Page-Count") ?? 1),
+    };
   },
 
   async textPage(title: string, lines: string[]): Promise<{ pdf: Buffer }> {
