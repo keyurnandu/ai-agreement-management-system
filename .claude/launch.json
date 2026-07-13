@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd /d C:\\Users\\knandu\\dev\\contract-platform && npm run dev --workspace apps/web"],
+      "port": 3000
+    },
+    {
+      "name": "pdf-engine",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd /d C:\\Users\\knandu\\dev\\contract-platform\\services\\pdf-engine && .venv\\Scripts\\python.exe -m uvicorn app.main:app --port 8001 --reload"],
+      "port": 8001
+    },
+    {
+      "name": "intelligence",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd /d C:\\Users\\knandu\\dev\\contract-platform\\services\\intelligence && .venv\\Scripts\\python.exe -m uvicorn app.main:app --port 8002 --reload"],
+      "port": 8002
+    }
+  ]
+}
