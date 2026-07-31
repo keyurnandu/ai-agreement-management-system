@@ -12,13 +12,17 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ token: string
   const issue = await prisma.reviewIssue.findFirst({ where: { id: issueId, dealId: deal.id } });
   if (!issue) return NextResponse.json({ error: "issue not found" }, { status: 404 });
 
-  const body = (await req.json()) as { vendorResponse?: string; status?: string };
+  const body = (await req.json().catch(() => ({}))) as { vendorResponse?: string; status?: string };
+  // The vendor may respond to any issue, but may only mark RESOLVED an issue
+  // they raised themselves — they can't unilaterally clear the org's compliance
+  // (SYSTEM) or ORG-raised findings; the org confirms those.
+  const canResolve = body.status === "RESOLVED" && issue.raisedBySide === "VENDOR";
   const updated = await prisma.reviewIssue.update({
     where: { id: issueId },
     data: {
       vendorResponse: body.vendorResponse ?? issue.vendorResponse,
-      status: body.status === "RESOLVED" ? "RESOLVED" : issue.status,
-      resolvedAt: body.status === "RESOLVED" ? new Date() : issue.resolvedAt,
+      status: canResolve ? "RESOLVED" : issue.status,
+      resolvedAt: canResolve ? new Date() : issue.resolvedAt,
     },
   });
 

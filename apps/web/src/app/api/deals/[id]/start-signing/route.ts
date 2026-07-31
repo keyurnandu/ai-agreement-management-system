@@ -63,8 +63,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         });
       }
     }
-    await prisma.deal.update({ where: { id }, data: { agreementId, status: "SIGNING" } });
   }
+  // Always advance to SIGNING (even when re-entering with an existing agreement),
+  // otherwise the deal can't auto-complete when its agreement finishes signing.
+  await prisma.deal.update({ where: { id }, data: { agreementId, status: "SIGNING" } });
 
   // Ensure both parties exist on existing agreements started before this change.
   if (agreementId && owner?.email) {

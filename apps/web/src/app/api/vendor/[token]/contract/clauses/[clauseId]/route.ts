@@ -39,7 +39,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ token: string
   });
   if (!clause) return NextResponse.json({ error: "clause not found" }, { status: 404 });
 
-  const body = (await req.json()) as { body?: string; issueId?: string; note?: string };
+  const body = (await req.json().catch(() => ({}))) as { body?: string; issueId?: string; note?: string };
   if (typeof body.body !== "string" || !body.body.trim()) {
     return NextResponse.json({ error: "body required" }, { status: 400 });
   }

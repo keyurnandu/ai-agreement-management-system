@@ -22,6 +22,9 @@ export async function publishContractAsPdf(opts: {
     include: { clauses: { orderBy: { order: "asc" } } },
   });
   if (!c) throw new Error("contract not found");
+  // Never publish an empty contract — it would overwrite the deal's live
+  // document (possibly the negotiated vendor file) with a title-only PDF.
+  if (c.clauses.length === 0) throw new Error("Add at least one clause before generating the document.");
 
   const lineItems = normalizeLineItems(c.lineItems);
   const html = composeContractHtml(c.title, c.clauses, lineItems);

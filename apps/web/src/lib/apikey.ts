@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 
@@ -38,7 +38,10 @@ export async function verifyApiKey(req: Request): Promise<ApiActor | null> {
   const prefix = token.split(".")[0];
   const rec = await prisma.apiKey.findUnique({ where: { prefix } });
   if (!rec || !rec.active) return null;
-  if (sha256(token) !== rec.keyHash) return null;
+  // Constant-time compare of the (equal-length hex) digests.
+  const got = Buffer.from(sha256(token), "hex");
+  const want = Buffer.from(rec.keyHash, "hex");
+  if (got.length !== want.length || !timingSafeEqual(got, want)) return null;
 
   void prisma.apiKey.update({ where: { id: rec.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
   return { keyId: rec.id, scopes: (rec.scopes as string[] | null) ?? [], subject: rec.createdById ?? "apikey" };

@@ -66,7 +66,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const ann = await prisma.annotation.create({
     data: {
       documentId: id,
-      page: Math.max(1, Number(body.page ?? 1)),
+      page: Math.max(1, Math.floor(Number(body.page)) || 1),
       type,
       rect: (body.rect ?? undefined) as Prisma.InputJsonValue | undefined,
       color: body.color ?? "#ffd54f",

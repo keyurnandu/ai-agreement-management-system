@@ -5,6 +5,7 @@ import { storage } from "@/lib/adapters/storage";
 import { pdfEngine, type PageOp } from "@/lib/services/client";
 import { recordAudit } from "@/lib/audit";
 import { canAccessDocument, documentStorageKey, latestVersion, loadVersionBytes } from "@/lib/documents";
+import { getDocumentEditLock } from "@/lib/delete-resources";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +18,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!(await canAccessDocument(actor, id, "EDIT"))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
+  const lock = await getDocumentEditLock(id);
+  if (lock) return NextResponse.json({ error: lock }, { status: 409 });
 
-  const body = (await req.json()) as { ops?: PageOp | PageOp[]; note?: string };
+  const body = (await req.json().catch(() => ({}))) as { ops?: PageOp | PageOp[]; note?: string };
   if (!body.ops) return NextResponse.json({ error: "ops required" }, { status: 400 });
 
   const current = await latestVersion(id);

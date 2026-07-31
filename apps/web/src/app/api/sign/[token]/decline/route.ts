@@ -13,6 +13,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   if (r.agreement.status !== "SENT" && r.agreement.status !== "IN_PROGRESS") {
     return NextResponse.json({ error: "this agreement is not open" }, { status: 409 });
   }
+  // Only an actual signer whose turn it is may decline — a CC party or a
+  // later-in-order signer can't unilaterally kill the agreement (mirrors /complete).
+  if (r.role === "CC") return NextResponse.json({ error: "CC recipients can't decline" }, { status: 403 });
+  if (r.status !== "SENT" && r.status !== "VIEWED") {
+    return NextResponse.json({ error: "it is not your turn" }, { status: 409 });
+  }
 
   const body = (await req.json().catch(() => ({}))) as { reason?: string };
 

@@ -1,6 +1,20 @@
 import { prisma } from "@/lib/db";
 import { storage } from "@/lib/adapters/storage";
 
+/** A document that's out for signature or fully signed must not get a new
+ * version — otherwise a rotate/merge/page-op would silently supersede the
+ * PDF that signers signed (or the certified, completed one). */
+export async function getDocumentEditLock(documentId: string): Promise<string | null> {
+  const ag = await prisma.agreement.findUnique({
+    where: { documentId },
+    select: { title: true, status: true },
+  });
+  if (ag && ["SENT", "IN_PROGRESS", "COMPLETED"].includes(ag.status)) {
+    return `Document is part of agreement "${ag.title}" (${ag.status}) and can't be modified. Void the agreement first.`;
+  }
+  return null;
+}
+
 export async function getDocumentDeleteBlockers(documentId: string): Promise<string | null> {
   const [agreement, dealCount, template, rulePack] = await Promise.all([
     prisma.agreement.findUnique({ where: { documentId }, select: { title: true, status: true } }),
@@ -84,6 +98,9 @@ export async function deleteDealHard(dealId: string): Promise<void> {
     }
   }
 
+  // Unlink the reciprocal contract pointer so it isn't left dangling at the
+  // now-deleted deal (which would 500 a later re-link). Mirrors deleteContractHard.
+  await prisma.contract.updateMany({ where: { dealId }, data: { dealId: null } });
   await prisma.deal.delete({ where: { id: dealId } });
 }
 

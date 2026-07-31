@@ -5,6 +5,8 @@ import { storage } from "@/lib/adapters/storage";
 import { pdfEngine } from "@/lib/services/client";
 import { recordAudit } from "@/lib/audit";
 import { canAccessDocument, documentStorageKey, latestVersion, loadVersionBytes } from "@/lib/documents";
+import { getDocumentEditLock } from "@/lib/delete-resources";
+import { MAX_UPLOAD_BYTES } from "@/lib/upload-limits";
 
 export const dynamic = "force-dynamic";
 
@@ -17,10 +19,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!(await canAccessDocument(actor, id, "EDIT"))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
+  const lock = await getDocumentEditLock(id);
+  if (lock) return NextResponse.json({ error: lock }, { status: 409 });
 
   const form = await req.formData();
   const file = form.get("file");
   if (!(file instanceof File)) return NextResponse.json({ error: "file is required" }, { status: 400 });
+  if (file.size > MAX_UPLOAD_BYTES) return NextResponse.json({ error: "file too large (max 30 MB)" }, { status: 413 });
 
   const incoming = Buffer.from(await file.arrayBuffer());
   if (incoming.subarray(0, 5).toString("latin1") !== "%PDF-") {

@@ -16,8 +16,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!version) return new Response("not found", { status: 404 });
 
   const url = new URL(req.url);
-  const page = Math.max(1, Number(url.searchParams.get("page") ?? 1));
-  const dpi = Number(url.searchParams.get("dpi") ?? 144);
+  const page = Math.max(1, Math.floor(Number(url.searchParams.get("page")) || 1));
+  const dpi = Math.min(200, Math.max(72, Math.floor(Number(url.searchParams.get("dpi")) || 144)));
 
   const bytes = await loadVersionBytes(version.storageKey);
   const { png, pageCount } = await pdfEngine.render(bytes, version.originalFilename ?? undefined, page, dpi);

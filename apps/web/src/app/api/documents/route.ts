@@ -6,6 +6,7 @@ import { pdfEngine } from "@/lib/services/client";
 import { recordAudit } from "@/lib/audit";
 import { emitEvent } from "@/lib/webhooks";
 import { documentStorageKey } from "@/lib/documents";
+import { MAX_UPLOAD_BYTES } from "@/lib/upload-limits";
 import {
   allocateCommercialId,
   getCommercialTypeByKey,
@@ -25,6 +26,9 @@ export async function POST(req: Request) {
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "file is required" }, { status: 400 });
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return NextResponse.json({ error: "file too large (max 30 MB)" }, { status: 413 });
   }
 
   // Authoritative check is the PDF magic number — client-supplied MIME types are

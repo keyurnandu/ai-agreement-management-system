@@ -178,11 +178,13 @@ export async function runComplianceCheck(dealId: string, actorId: string) {
 
   const issues = [];
 
+  // Clear prior system-raised compliance issues so re-runs don't pile up
+  // duplicates — for BOTH the structured and legacy free-text paths.
+  await prisma.reviewIssue.deleteMany({ where: { dealId, raisedBySide: "SYSTEM", status: "OPEN" } });
+
   // Preferred path: structured, deterministic rules (explainable + repeatable).
   const pack = parseRulePack(rulesText);
   if (pack) {
-    // Clear prior system-raised compliance issues so re-runs don't pile up duplicates.
-    await prisma.reviewIssue.deleteMany({ where: { dealId, raisedBySide: "SYSTEM", status: "OPEN" } });
     const findings = evaluateCompliance(text, pack.rules);
     for (const f of findings) {
       if (f.status === "PASS") continue;
@@ -225,13 +227,15 @@ export async function runComplianceCheck(dealId: string, actorId: string) {
     }
   }
 
-  // Running compliance on a draft (a pre-send self-check) keeps it a draft;
-  // once it's in negotiation, surface issues (ISSUES_OPEN) or clear to review.
-  const nextStatus = deal.status === "DRAFT" ? "DRAFT" : issues.length ? "ISSUES_OPEN" : "UNDER_REVIEW";
-  await prisma.deal.update({
-    where: { id: dealId },
-    data: { status: nextStatus },
-  });
+  // Only move status for deals still in negotiation. A DRAFT self-check stays a
+  // draft; an APPROVED/SIGNING/COMPLETED deal is NOT rewound by a compliance run.
+  const NEGOTIATION = ["WITH_VENDOR", "VENDOR_SUBMITTED", "UNDER_REVIEW", "ISSUES_OPEN"];
+  if (NEGOTIATION.includes(deal.status)) {
+    await prisma.deal.update({
+      where: { id: dealId },
+      data: { status: issues.length ? "ISSUES_OPEN" : "UNDER_REVIEW" },
+    });
+  }
 
   return issues;
 }

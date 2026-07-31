@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { intelligence } from "@/lib/services/client";
 import { roleAtLeast } from "@/lib/rbac";
-import { getDocumentText } from "@/lib/documents";
+import { getDocumentText, canAccessDocument } from "@/lib/documents";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,7 @@ export async function POST(req: Request) {
   if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   if (!roleAtLeast(session.user.role, "EDITOR")) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
-  const b = (await req.json()) as {
+  const b = (await req.json().catch(() => ({}))) as {
     label?: string;
     type?: string;
     prompt?: string;
@@ -24,7 +24,13 @@ export async function POST(req: Request) {
   };
 
   let text = (b.sampleText ?? "").trim();
-  if (!text && b.documentId) text = (await getDocumentText(b.documentId)) ?? "";
+  if (!text && b.documentId) {
+    // Reading a document's text requires access to that document.
+    if (!(await canAccessDocument({ id: session.user.id, role: session.user.role }, b.documentId, "VIEW"))) {
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
+    text = (await getDocumentText(b.documentId)) ?? "";
+  }
   if (!text) return NextResponse.json({ error: "provide sample text or a documentId" }, { status: 400 });
 
   const { provider, values } = await intelligence.extract(text, [

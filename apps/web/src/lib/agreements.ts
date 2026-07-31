@@ -39,6 +39,14 @@ export async function voidAgreement(agreementId: string): Promise<void> {
     where: { agreementId, status: { notIn: ["SIGNED", "DECLINED"] } },
     data: { accessToken: null },
   });
+  // Voiding a completed agreement must not leave the linked deal stuck at
+  // COMPLETED — revert it to APPROVED so the two stay consistent.
+  if (ag.status === "COMPLETED") {
+    await prisma.deal.updateMany({
+      where: { agreementId, status: "COMPLETED" },
+      data: { status: "APPROVED", completedAt: null },
+    });
+  }
 }
 
 export function agreementCanVoid(status: string): boolean {

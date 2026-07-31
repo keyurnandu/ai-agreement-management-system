@@ -14,6 +14,19 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
+  // Only a deal that's actually under review can be approved — not a DRAFT/
+  // WITH_VENDOR deal (no negotiated content yet) or one already past approval.
+  // Mirrors the Approve button's visibility gate on the deal page.
+  const deal = await prisma.deal.findUnique({ where: { id }, select: { status: true } });
+  if (!deal) return NextResponse.json({ error: "not found" }, { status: 404 });
+  const REVIEWABLE = ["UNDER_REVIEW", "VENDOR_SUBMITTED", "ISSUES_OPEN"];
+  if (!REVIEWABLE.includes(deal.status)) {
+    return NextResponse.json(
+      { error: `Can't approve a deal that's in ${deal.status.toLowerCase().replace(/_/g, " ")} — it must be under review first.` },
+      { status: 400 },
+    );
+  }
+
   const open = await prisma.reviewIssue.count({ where: { dealId: id, status: "OPEN" } });
   if (open > 0) {
     return NextResponse.json({ error: `${open} open issue(s) must be resolved first` }, { status: 400 });

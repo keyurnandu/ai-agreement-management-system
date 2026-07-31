@@ -22,7 +22,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     return NextResponse.json({ error: "this agreement is not open for signing" }, { status: 409 });
   }
 
-  const body = (await req.json()) as { values?: Record<string, string> };
+  const body = (await req.json().catch(() => ({}))) as { values?: Record<string, string> };
   const values = body.values ?? {};
 
   const myFields = await prisma.field.findMany({ where: { agreementId: r.agreementId, recipientId: r.id } });

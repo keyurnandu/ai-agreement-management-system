@@ -6,6 +6,7 @@ import { latestVersion } from "@/lib/documents";
 import { computeVersionDiff, saveDealDiff } from "@/lib/document-diff";
 import { isNoisyLineDiff } from "@/lib/text-diff";
 import { sendRevisionNotice } from "@/lib/adapters/email";
+import { MAX_UPLOAD_BYTES } from "@/lib/upload-limits";
 import { env } from "@/env";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +22,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   const form = await req.formData();
   const file = form.get("file");
   if (!(file instanceof File)) return NextResponse.json({ error: "file required" }, { status: 400 });
+  // Bound memory use on this public, token-only endpoint before buffering.
+  if (file.size > MAX_UPLOAD_BYTES) return NextResponse.json({ error: "file too large (max 30 MB)" }, { status: 413 });
 
   const bytes = Buffer.from(await file.arrayBuffer());
   if (bytes.subarray(0, 5).toString("latin1") !== "%PDF-") {

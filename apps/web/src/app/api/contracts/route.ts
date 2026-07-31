@@ -12,6 +12,7 @@ import {
   validateParentForType,
 } from "@/lib/commercial-types";
 import { linkDealAndContract, autoLinkContractByCommercialId } from "@/lib/commercial-link";
+import { canAccessDeal } from "@/lib/procurement";
 import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -78,6 +79,11 @@ export async function POST(req: Request) {
   const commercialType = await getCommercialType(body.commercialTypeId);
   if (!commercialType || commercialType.domain !== "CONTRACT" || !commercialType.active) {
     return NextResponse.json({ error: "invalid contract type" }, { status: 400 });
+  }
+  // Can only attach the new contract to a deal you can access (prevents injecting
+  // an attacker-authored contract into someone else's deal).
+  if (body.dealId && !(await canAccessDeal(actor, body.dealId))) {
+    return NextResponse.json({ error: "you don't have access to that deal" }, { status: 403 });
   }
 
   const parentContractId = body.parentContractId?.trim() || null;

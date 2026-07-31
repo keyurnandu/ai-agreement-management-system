@@ -5,7 +5,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { recordAudit } from "@/lib/audit";
 import { roleAtLeast } from "@/lib/rbac";
-import { WEBHOOK_EVENTS } from "@/lib/webhooks";
+import { WEBHOOK_EVENTS, isPublicWebhookUrl } from "@/lib/webhooks";
 
 export const dynamic = "force-dynamic";
 
@@ -35,9 +35,12 @@ export async function POST(req: Request) {
   const actor = { id: session.user.id, role: session.user.role };
   if (!roleAtLeast(actor.role, "MANAGER")) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
-  const b = (await req.json()) as { url?: string; events?: string[] };
+  const b = (await req.json().catch(() => ({}))) as { url?: string; events?: string[] };
   if (!b.url?.trim() || !/^https?:\/\//.test(b.url)) {
     return NextResponse.json({ error: "valid http(s) url required" }, { status: 400 });
+  }
+  if (!isPublicWebhookUrl(b.url.trim())) {
+    return NextResponse.json({ error: "webhook URL must be a public host (no localhost / private / metadata addresses)" }, { status: 400 });
   }
   const events = Array.isArray(b.events) && b.events.length ? b.events : ["*"];
   const secret = randomBytes(24).toString("base64url");

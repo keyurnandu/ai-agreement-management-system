@@ -30,16 +30,27 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
+  const actor = { id: session.user.id, role: session.user.role };
   const { id: dealId } = await ctx.params;
-  if (!(await canAccessDeal({ id: session.user.id, role: session.user.role }, dealId))) {
+  if (!(await canAccessDeal(actor, dealId))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  const body = (await req.json()) as { contractId?: string };
+  const body = (await req.json().catch(() => ({}))) as { contractId?: string };
   if (!body.contractId) return NextResponse.json({ error: "contractId required" }, { status: 400 });
 
-  const contract = await prisma.contract.findUnique({ where: { id: body.contractId } });
+  const contract = await prisma.contract.findUnique({
+    where: { id: body.contractId },
+    select: { id: true, createdById: true, dealId: true },
+  });
   if (!contract) return NextResponse.json({ error: "contract not found" }, { status: 404 });
+  // Must be allowed to take this contract: own it (or be a manager), and it must
+  // not already belong to a deal you can't access (prevents stealing a linked contract).
+  const canTake = roleAtLeast(actor.role, "MANAGER") || contract.createdById === actor.id;
+  if (!canTake) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (contract.dealId && contract.dealId !== dealId && !(await canAccessDeal(actor, contract.dealId))) {
+    return NextResponse.json({ error: "that contract is linked to another deal" }, { status: 403 });
+  }
 
   try {
     await linkDealAndContract(dealId, body.contractId);

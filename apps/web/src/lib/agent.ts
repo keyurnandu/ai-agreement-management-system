@@ -358,11 +358,22 @@ export async function executeAssistantAction(
   const open = await prisma.reviewIssue.count({ where: { dealId: d.id, status: "OPEN" } });
   if (open > 0) return { reply: `Can't approve ${label} yet — ${open} open issue${open === 1 ? "" : "s"} must be resolved first.`, tool, links: [link] };
 
+  // A deal can only be approved from a review-ready state (not a DRAFT/placeholder
+  // deal, and not one already completed) — mirrors the approve API + UI gate.
+  const REVIEWABLE = ["UNDER_REVIEW", "VENDOR_SUBMITTED", "ISSUES_OPEN"];
+  const stateLabel = d.status.toLowerCase().replace(/_/g, " ");
+
   if (tool === "approve_deal") {
+    if (!REVIEWABLE.includes(d.status)) {
+      return { reply: `Can't approve ${label} — it's ${stateLabel} and must be under review first.`, tool, links: [link] };
+    }
     await prisma.deal.update({ where: { id: d.id }, data: { status: "APPROVED", approvedAt: new Date() } });
     return { reply: `Approved ${label}. You can now start signing.`, tool, links: [link] };
   }
   if (tool === "send_for_signature") {
+    if (![...REVIEWABLE, "APPROVED", "SIGNING"].includes(d.status)) {
+      return { reply: `Can't send ${label} for signing — it's ${stateLabel} and must be under review or approved first.`, tool, links: [link] };
+    }
     if (!["APPROVED", "SIGNING"].includes(d.status)) {
       await prisma.deal.update({ where: { id: d.id }, data: { status: "APPROVED", approvedAt: new Date() } });
     }
