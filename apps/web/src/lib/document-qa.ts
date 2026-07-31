@@ -3,6 +3,8 @@ import { intelligence } from "@/lib/services/client";
 import { getDocumentText } from "@/lib/documents";
 import { routeToAttribute, factAnswer, type AttrFact } from "@/lib/chat-intent";
 
+export type ChatTurn = { role: string; content: string };
+
 export interface QaCitation {
   n: number;
   score: number;
@@ -36,7 +38,7 @@ export async function loadFacts(documentId: string): Promise<AttrFact[]> {
 }
 
 /** Answer a question about a single document: extracted facts first, then RAG. */
-export async function answerAboutDocument(documentId: string, question: string): Promise<QaResult> {
+export async function answerAboutDocument(documentId: string, question: string, history: ChatTurn[] = []): Promise<QaResult> {
   const facts = await loadFacts(documentId);
   const hit = routeToAttribute(question, facts);
   if (hit) {
@@ -44,12 +46,12 @@ export async function answerAboutDocument(documentId: string, question: string):
   }
   const text = await getDocumentText(documentId);
   if (text === null) return { answer: "This document has no extractable text yet.", citations: [], provider: "none", routed: "rag" };
-  const result = await intelligence.ask(text, question, documentId);
+  const result = await intelligence.ask(text, question, documentId, history);
   return { ...result, routed: "rag" };
 }
 
 /** Two-stage retrieval across every document in a collection. */
-export async function answerAcrossCollection(collectionId: string, question: string): Promise<QaResult> {
+export async function answerAcrossCollection(collectionId: string, question: string, history: ChatTurn[] = []): Promise<QaResult> {
   const files: { id: string; title: string }[] = [];
   let frontier = [collectionId];
   const seen = new Set<string>();
@@ -105,7 +107,7 @@ export async function answerAcrossCollection(collectionId: string, question: str
 
   const perDoc = [];
   for (const d of top) {
-    const res = await intelligence.ask(d.text, question, d.id);
+    const res = await intelligence.ask(d.text, question, d.id, history);
     perDoc.push({ doc: d, res, topScore: res.citations?.[0]?.score ?? 0 });
   }
   perDoc.sort((a, b) => b.topScore - a.topScore);

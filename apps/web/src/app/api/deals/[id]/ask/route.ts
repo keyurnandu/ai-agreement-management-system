@@ -37,9 +37,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   if (!(await canAccessDeal(actor, id))) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
-  const body = (await req.json()) as { question?: string };
+  const body = (await req.json()) as { question?: string; history?: { role: string; content: string }[] };
   const question = body.question?.trim();
   if (!question) return NextResponse.json({ error: "question required" }, { status: 400 });
+  const history = Array.isArray(body.history) ? body.history.slice(-6) : [];
 
   const deal = await prisma.deal.findUnique({
     where: { id },
@@ -90,6 +91,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!deal.documentId) {
     return NextResponse.json({ answer: "This deal has no document attached yet.", citations: [], provider: "deal", routed: "deal" });
   }
-  const result = await answerAboutDocument(deal.documentId, question);
+  const result = await answerAboutDocument(deal.documentId, question, history);
   return NextResponse.json(result);
 }

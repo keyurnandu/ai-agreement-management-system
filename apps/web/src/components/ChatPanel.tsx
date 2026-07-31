@@ -64,6 +64,8 @@ export function ChatPanel({
   async function send(question: string) {
     const q = question.trim();
     if (!q || busy) return;
+    // Recent turns for follow-up context (before adding the new question).
+    const history = messages.slice(-6).map((m) => ({ role: m.role, content: m.text }));
     setInput("");
     setMessages((m) => [...m, { role: "user", text: q }]);
     setBusy(true);
@@ -71,7 +73,7 @@ export function ChatPanel({
       const r = await fetch(askUrl ?? `/api/documents/${documentId}/ask`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question: q }),
+        body: JSON.stringify({ question: q, history }),
       });
       if (!r.ok) {
         const e = ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Error ${r.status}`;

@@ -317,10 +317,10 @@ export const intelligence = {
     }),
   analyze: (text: string) =>
     call<AnalyzeResult>(env.INTELLIGENCE_URL, "/ai/analyze", { method: "POST", body: { text }, scope: "analyze" }),
-  ask: (text: string, question: string, docId?: string) =>
+  ask: (text: string, question: string, docId?: string, history?: { role: string; content: string }[]) =>
     call<AskResult>(env.INTELLIGENCE_URL, "/ai/ask", {
       method: "POST",
-      body: { text, question, doc_id: docId },
+      body: { text, question, doc_id: docId, history: history ?? [] },
       scope: "ask",
     }),
   classify: (text: string) =>

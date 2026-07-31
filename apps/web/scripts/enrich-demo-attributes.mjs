@@ -94,7 +94,7 @@ export async function enrichDemoAttributes(prisma) {
     const termMonths = String(profile.term);
     const endDate = addMonths(effective, profile.term);
     const orderTotal = pickVar(t.variables, "order_total") ?? profile.val;
-    const governing = pickVar(t.variables, "governing_law") ?? "State of Delaware, USA";
+    const governing = pickVar(t.variables, "governing_law") ?? "State of California, USA";
     const parties = t.counterparty ? `Adobe Inc. and ${t.counterparty}` : "Adobe Inc.";
 
     const rows = [

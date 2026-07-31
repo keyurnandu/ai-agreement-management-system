@@ -48,6 +48,7 @@ class AskRequest(BaseModel):
     question: str
     top_k: int = 4
     doc_id: str | None = None
+    history: list[dict] = []  # prior turns: [{"role": "user"|"assistant", "content": str}]
 
 
 class IndexRequest(BaseModel):
@@ -151,9 +152,16 @@ async def ask(req: AskRequest) -> dict:
     context = "\n\n".join(f"[{rank + 1}] {chunks[idx]}" for rank, (_s, idx) in enumerate(scored))
     system = (
         "Answer the question using ONLY the provided context excerpts. Cite excerpt numbers like [1]. "
-        "If the answer is not in the context, say you don't know."
+        "If the answer is not in the context, say you don't know. "
+        "Use the conversation so far to resolve follow-up references (e.g. 'it', 'that clause')."
     )
-    c = await provider.complete(f"CONTEXT:\n{context}\n\nQUESTION: {req.question}", system, max_tokens=400)
+    convo = ""
+    if req.history:
+        recent = req.history[-6:]
+        turns = "\n".join(f"{t.get('role', 'user').upper()}: {t.get('content', '')}" for t in recent if t.get("content"))
+        if turns:
+            convo = f"CONVERSATION SO FAR:\n{turns}\n\n"
+    c = await provider.complete(f"{convo}CONTEXT:\n{context}\n\nQUESTION: {req.question}", system, max_tokens=400)
     citations = [
         {"n": rank + 1, "score": round(score, 3), "text": chunks[idx][:240]}
         for rank, (score, idx) in enumerate(scored)

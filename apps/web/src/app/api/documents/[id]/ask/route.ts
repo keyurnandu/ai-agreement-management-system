@@ -17,8 +17,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  const body = (await req.json()) as { question?: string };
+  const body = (await req.json()) as { question?: string; history?: { role: string; content: string }[] };
   if (!body.question?.trim()) return NextResponse.json({ error: "question required" }, { status: 400 });
+  const history = Array.isArray(body.history) ? body.history.slice(-6) : [];
 
   await recordAudit({
     action: "document.ask",
@@ -34,7 +35,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const result =
     doc.kind === "COLLECTION"
-      ? await answerAcrossCollection(id, body.question)
-      : await answerAboutDocument(id, body.question);
+      ? await answerAcrossCollection(id, body.question, history)
+      : await answerAboutDocument(id, body.question, history);
   return NextResponse.json(result);
 }
