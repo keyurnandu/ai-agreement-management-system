@@ -13,12 +13,25 @@ type DealLite = { id: string; commercialId: string | null; title: string; status
 type DocLite = { id: string; commercialId: string | null; title: string; kind: string; collectionParentId: string | null };
 type Step = { tool: string; result: string };
 
+export type PageContext = { dealId?: string; documentId?: string };
+export type Proposal = {
+  tool: string;
+  dealId?: string;
+  title?: string;
+  summary: string;
+  args?: Record<string, string>;
+  /** The original request + steps already done, so the chain can resume after confirmation. */
+  message?: string;
+  priorSteps?: Step[];
+};
 export type AssistantResult = {
   reply: string;
   tool: string;
   steps?: Step[];
-  proposal?: { tool: string; dealId?: string; title?: string; summary: string; args?: Record<string, string> };
+  proposal?: Proposal;
   links?: { href: string; label: string }[];
+  /** A resumed run that had nothing left to do — the UI can drop the empty bubble. */
+  noop?: boolean;
 };
 
 const MAX_STEPS = 6;
@@ -72,7 +85,7 @@ function guessDirection(q: string): "ORG_SELLING" | "ORG_BUYING" {
 const dealLink = (d: DealLite) => ({ href: `/deals/${d.id}`, label: d.commercialId ?? d.title });
 
 /** Ask the LLM for the next single tool given the task and prior step results. */
-async function planNext(message: string, deals: DealLite[], docs: DocLite[], steps: Step[]) {
+async function planNext(message: string, deals: DealLite[], docs: DocLite[], steps: Step[], currentDeal?: DealLite | null) {
   const dealCat = deals
     .slice(0, 50)
     .map((d) => `${d.commercialId ?? d.id} — ${d.title} [${d.status}, ${d.direction === "ORG_BUYING" ? "procurement" : "sales"}]`)
@@ -87,10 +100,17 @@ async function planNext(message: string, deals: DealLite[], docs: DocLite[], ste
     "Given the user's request and the results of steps already done, choose the NEXT single tool. " +
     'Reply with ONLY JSON {"tool": <name>, "args": {...}, "say": <one short first-person sentence>}. ' +
     'When the request is fully handled, reply {"tool":"done","say":<final summary of what you did>}. ' +
+    "Do ONLY what the user asked. Never add mutating steps they didn't request — e.g. if they say " +
+    '"run compliance", run it once and report; do NOT then resolve issues, approve, or re-run. ' +
     "Never repeat a step already done, and never create a collection that already exists. " +
     "Resolve deal/document/collection references to names from the lists below. Tools:\n" +
     TOOL_CATALOG;
+  const pageHint = currentDeal
+    ? `CURRENT PAGE: The user is viewing deal ${currentDeal.commercialId ?? currentDeal.id} — “${currentDeal.title}” [${currentDeal.status}]. ` +
+      `When they say “this deal”, “this”, “here”, “it”, or name no deal at all, act on ${currentDeal.commercialId ?? currentDeal.id}.\n\n`
+    : "";
   const prompt =
+    pageHint +
     `DEALS:\n${dealCat || "(none)"}\n\n` +
     `COLLECTIONS:\n${collectionCat || "(none)"}\n\n` +
     `DOCUMENTS:\n${fileCat || "(none)"}\n\n` +
@@ -107,7 +127,12 @@ async function openIssueCounts(dealIds: string[]): Promise<Map<string, number>> 
   return m;
 }
 
-export async function runAssistant(message: string, actor: Actor, onStep?: (step: Step) => void): Promise<AssistantResult> {
+export async function runAssistant(
+  message: string,
+  actor: Actor,
+  onStep?: (step: Step) => void,
+  opts?: { context?: PageContext; priorSteps?: Step[] },
+): Promise<AssistantResult> {
   const where = roleAtLeast(actor.role, "MANAGER") ? {} : { ownerId: actor.id };
   const deals = (await prisma.deal.findMany({
     where,
@@ -123,23 +148,40 @@ export async function runAssistant(message: string, actor: Actor, onStep?: (step
   })) as DocLite[];
   const issueCounts = await openIssueCounts(deals.map((d) => d.id));
 
+  // The deal (if any) the user is currently looking at — scopes bare commands
+  // like "run compliance" to this deal instead of asking which one.
+  const ctxId = opts?.context?.dealId;
+  const ctxDoc = opts?.context?.documentId;
+  const currentDeal =
+    (ctxId ? deals.find((d) => d.id === ctxId) : undefined) ??
+    (ctxDoc ? deals.find((d) => d.documentId === ctxDoc) : undefined) ??
+    null;
+
+  // Steps carried over from a confirmed action so the chain can resume where it
+  // left off. `prior` seeds the planner's memory; `steps` are new to this run.
+  const prior = opts?.priorSteps ?? [];
   const steps: Step[] = [];
   const links: { href: string; label: string }[] = [];
   let finalReply = "";
+  let noop = false;
 
   for (let i = 0; i < MAX_STEPS; i++) {
-    const plan = await planNext(message, deals, docs, steps);
+    const plan = await planNext(message, deals, docs, [...prior, ...steps], currentDeal);
     const tool = String(plan?.tool ?? "done");
     const args = (plan?.args ?? {}) as Record<string, string>;
     const say = typeof plan?.say === "string" ? plan.say : "";
 
     if (tool === "done" || tool === "none") {
+      // On a resumed run that did nothing new, the confirmed action already
+      // reported — don't emit a redundant "Done." bubble.
+      if (prior.length && steps.length === 0) noop = true;
       finalReply = say || (steps.length ? "Done." : "I'm not sure how to help with that — try asking about a deal or the portfolio.");
       break;
     }
 
     // Confirmation-required → stop and surface the proposal (with steps so far).
     if (CONFIRM_TOOLS.has(tool)) {
+      const carry = { message, priorSteps: [...prior, ...steps] };
       if (tool === "create_deal") {
         const dir = /(proc|buy|vendor)/i.test(args.direction ?? "") ? "procurement" : "sales";
         const title = (args.title ?? "").trim() || "New deal";
@@ -149,10 +191,10 @@ export async function runAssistant(message: string, actor: Actor, onStep?: (step
           reply: say || `${summary}?`,
           tool,
           steps,
-          proposal: { tool, summary, args: { direction: dir, title, counterparty } },
+          proposal: { tool, summary, args: { direction: dir, title, counterparty }, ...carry },
         };
       }
-      const d = resolveDeal(deals, args.dealRef);
+      const d = resolveDeal(deals, args.dealRef) ?? currentDeal;
       if (!d) {
         finalReply = "Which deal did you mean?";
         break;
@@ -162,12 +204,13 @@ export async function runAssistant(message: string, actor: Actor, onStep?: (step
         reply: say || `${summary}?`,
         tool,
         steps,
-        proposal: { tool, dealId: d.id, title: d.commercialId ?? d.title, summary },
+        proposal: { tool, dealId: d.id, title: d.commercialId ?? d.title, summary, ...carry },
         links: [dealLink(d)],
       };
     }
 
-    // Terminal answer.
+    // Terminal answer. Scope is the planner's call (it sees CURRENT PAGE), so
+    // don't force the current deal here — a portfolio question stays portfolio-wide.
     if (tool === "answer") {
       const question = args.question || message;
       const d = resolveDeal(deals, args.dealRef);
@@ -180,7 +223,7 @@ export async function runAssistant(message: string, actor: Actor, onStep?: (step
     }
 
     // Safe, non-terminal tools.
-    const { result, link } = await execSafe(tool, args, { deals, docs, issueCounts, actor });
+    const { result, link } = await execSafe(tool, args, { deals, docs, issueCounts, actor, currentDeal });
     const step = { tool, result };
     steps.push(step);
     onStep?.(step);
@@ -188,7 +231,7 @@ export async function runAssistant(message: string, actor: Actor, onStep?: (step
   }
 
   if (!finalReply) finalReply = steps.length ? "Done — see the steps above." : "I couldn't complete that.";
-  return { reply: finalReply, tool: "multi", steps, links: dedupeLinks(links) };
+  return { reply: finalReply, tool: "multi", steps, links: dedupeLinks(links), noop };
 }
 
 function dedupeLinks(links: { href: string; label: string }[]) {
@@ -199,9 +242,9 @@ function dedupeLinks(links: { href: string; label: string }[]) {
 async function execSafe(
   tool: string,
   args: Record<string, string>,
-  ctx: { deals: DealLite[]; docs: DocLite[]; issueCounts: Map<string, number>; actor: Actor },
+  ctx: { deals: DealLite[]; docs: DocLite[]; issueCounts: Map<string, number>; actor: Actor; currentDeal?: DealLite | null },
 ): Promise<{ result: string; link?: { href: string; label: string } }> {
-  const { deals, docs, issueCounts, actor } = ctx;
+  const { deals, docs, issueCounts, actor, currentDeal } = ctx;
 
   if (tool === "find") {
     const filter = (args.filter ?? "all").toLowerCase();
@@ -213,7 +256,7 @@ async function execSafe(
   }
 
   if (tool === "run_compliance") {
-    const d = resolveDeal(deals, args.dealRef);
+    const d = resolveDeal(deals, args.dealRef) ?? currentDeal;
     if (!d) return { result: "Deal not found." };
     if (!(await canAccessDeal(actor, d.id))) return { result: "No access to that deal." };
     const issues = await runComplianceCheck(d.id, actor.id);
@@ -222,7 +265,7 @@ async function execSafe(
   }
 
   if (tool === "resolve_issues") {
-    const d = resolveDeal(deals, args.dealRef);
+    const d = resolveDeal(deals, args.dealRef) ?? currentDeal;
     if (!d) return { result: "Deal not found." };
     if (!(await canAccessDeal(actor, d.id))) return { result: "No access to that deal." };
     const open = await prisma.reviewIssue.findMany({ where: { dealId: d.id, status: "OPEN" }, select: { id: true } });
@@ -237,7 +280,7 @@ async function execSafe(
   }
 
   if (tool === "run_extraction") {
-    const d = resolveDeal(deals, args.dealRef);
+    const d = resolveDeal(deals, args.dealRef) ?? currentDeal;
     if (!d) return { result: "Deal not found." };
     if (!d.documentId) return { result: `${d.commercialId}: no document attached.` };
     if (!(await canAccessDeal(actor, d.id))) return { result: "No access to that deal." };

@@ -2239,6 +2239,44 @@ button.source-link:hover .pill {
   max-width: 90%;
 }
 
+/* ── Global assistant dock (page-aware) ────────────────── */
+.assistant-fab {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 16px;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 40%, transparent);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.assistant-fab:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+.assistant-fab-icon { font-size: 15px; line-height: 1; }
+/* AssistantChat fills the drawer flush (no card chrome, no fixed height) */
+.assistant-dock { width: min(440px, 100vw); }
+.assistant-dock .assistant-shell {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
 /* ── Agreements pipeline ───────────────────────────────── */
 .agreements-toolbar {
   display: flex;

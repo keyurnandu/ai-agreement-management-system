@@ -8,9 +8,14 @@ export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
 
-  const body = (await req.json()) as { message?: string };
+  const body = (await req.json()) as {
+    message?: string;
+    context?: { dealId?: string; documentId?: string };
+    priorSteps?: { tool: string; result: string }[];
+  };
   const message = body.message?.trim();
   if (!message) return new Response(JSON.stringify({ error: "message required" }), { status: 400 });
+  const priorSteps = Array.isArray(body.priorSteps) ? body.priorSteps.slice(0, 12) : undefined;
 
   const actor = { id: session.user.id, role: session.user.role, email: session.user.email };
   await recordAudit({
@@ -27,7 +32,10 @@ export async function POST(req: Request) {
     async start(controller) {
       const emit = (obj: unknown) => controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
       try {
-        const result = await runAssistant(message, actor, (step) => emit({ type: "step", step }));
+        const result = await runAssistant(message, actor, (step) => emit({ type: "step", step }), {
+          context: body.context,
+          priorSteps,
+        });
         emit({ type: "final", ...result });
       } catch (e) {
         const msg = e instanceof Error ? e.message : "assistant error";

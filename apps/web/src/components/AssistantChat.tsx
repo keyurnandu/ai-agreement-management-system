@@ -4,9 +4,18 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 type LinkT = { href: string; label: string };
-type Proposal = { tool: string; dealId?: string; title?: string; summary: string; args?: Record<string, string> };
 type StepT = { tool: string; result: string };
+type Proposal = {
+  tool: string;
+  dealId?: string;
+  title?: string;
+  summary: string;
+  args?: Record<string, string>;
+  message?: string;
+  priorSteps?: StepT[];
+};
 type Msg = { role: "user" | "assistant"; text: string; links?: LinkT[]; proposal?: Proposal; steps?: StepT[]; id?: string };
+export type AssistantContext = { dealId?: string; documentId?: string };
 
 const TOOL_LABEL: Record<string, string> = {
   find: "Searched deals",
@@ -25,8 +34,17 @@ const SUGGESTIONS = [
   "What's blocking POR-4?",
   "Send SMCW-1 for signature",
 ];
+// When the assistant is opened on a specific deal, it already knows which one —
+// so the prompts drop the deal name and act on "this".
+const DEAL_SUGGESTIONS = [
+  "Run compliance on this deal",
+  "What's blocking this?",
+  "Resolve the open issues here",
+  "Extract the contract data",
+  "Approve and send this for signature",
+];
 
-export function AssistantChat() {
+export function AssistantChat({ context }: { context?: AssistantContext } = {}) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -37,19 +55,19 @@ export function AssistantChat() {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, busy]);
 
-  async function send(text: string) {
-    const q = text.trim();
-    if (!q || busy) return;
-    setInput("");
+  // Drive one turn of the assistant stream into a fresh assistant bubble.
+  // `silentIfEmpty` drops the bubble when a resumed run had nothing left to do.
+  async function runStream(body: Record<string, unknown>, opts?: { silentIfEmpty?: boolean }) {
     const aid = (globalThis.crypto?.randomUUID?.() ?? String(Math.random())) as string;
-    setMessages((m) => [...m, { role: "user", text: q }, { role: "assistant", id: aid, text: "", steps: [] }]);
+    setMessages((m) => [...m, { role: "assistant", id: aid, text: "", steps: [] }]);
     setBusy(true);
     const patch = (fn: (msg: Msg) => Msg) => setMessages((m) => m.map((msg) => (msg.id === aid ? fn(msg) : msg)));
+    const drop = () => setMessages((m) => m.filter((msg) => msg.id !== aid));
     try {
       const r = await fetch("/api/assistant", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: q }),
+        body: JSON.stringify(body),
       });
       if (!r.body) {
         const j = (await r.json().catch(() => ({}))) as { reply?: string };
@@ -67,7 +85,7 @@ export function AssistantChat() {
         buf = lines.pop() ?? "";
         for (const line of lines) {
           if (!line.trim()) continue;
-          let ev: { type?: string; step?: StepT; reply?: string; links?: LinkT[]; proposal?: Proposal; steps?: StepT[] };
+          let ev: { type?: string; step?: StepT; reply?: string; links?: LinkT[]; proposal?: Proposal; steps?: StepT[]; noop?: boolean };
           try {
             ev = JSON.parse(line);
           } catch {
@@ -76,7 +94,8 @@ export function AssistantChat() {
           if (ev.type === "step" && ev.step) {
             patch((msg) => ({ ...msg, steps: [...(msg.steps ?? []), ev.step!] }));
           } else if (ev.type === "final") {
-            patch((msg) => ({ ...msg, text: ev.reply ?? "(no reply)", links: ev.links, proposal: ev.proposal, steps: ev.steps ?? msg.steps }));
+            if (opts?.silentIfEmpty && ev.noop) drop();
+            else patch((msg) => ({ ...msg, text: ev.reply ?? "(no reply)", links: ev.links, proposal: ev.proposal, steps: ev.steps ?? msg.steps }));
           }
         }
       }
@@ -87,9 +106,19 @@ export function AssistantChat() {
     }
   }
 
+  async function send(text: string) {
+    const q = text.trim();
+    if (!q || busy) return;
+    setInput("");
+    setMessages((m) => [...m, { role: "user", text: q }]);
+    await runStream({ message: q, context });
+  }
+
   async function confirm(idx: number, p: Proposal) {
     if (busy) return;
     setBusy(true);
+    let executeReply = "Done.";
+    let links: LinkT[] | undefined;
     try {
       const r = await fetch("/api/assistant/execute", {
         method: "POST",
@@ -97,10 +126,21 @@ export function AssistantChat() {
         body: JSON.stringify({ tool: p.tool, dealId: p.dealId, args: p.args }),
       });
       const j = (await r.json()) as Msg & { reply?: string };
+      executeReply = j.reply ?? "Done.";
+      links = j.links;
       setHandled((h) => new Set(h).add(idx));
-      setMessages((m) => [...m, { role: "assistant", text: j.reply ?? "Done.", links: j.links }]);
-    } finally {
+      setMessages((m) => [...m, { role: "assistant", text: executeReply, links }]);
+    } catch {
+      setMessages((m) => [...m, { role: "assistant", text: "Sorry — that action failed." }]);
       setBusy(false);
+      return;
+    }
+    setBusy(false);
+    // Resume the broader request: replay the steps so far (plus this confirmed
+    // action) so the planner picks up whatever came after "…, then …".
+    if (p.message) {
+      const priorSteps = [...(p.priorSteps ?? []), { tool: p.tool, result: executeReply }];
+      await runStream({ message: p.message, context, priorSteps }, { silentIfEmpty: true });
     }
   }
 
@@ -116,7 +156,7 @@ export function AssistantChat() {
               send a deal for signature. I&apos;ll confirm before anything goes out.
             </p>
             <div className="assistant-suggest">
-              {SUGGESTIONS.map((s) => (
+              {(context?.dealId ? DEAL_SUGGESTIONS : SUGGESTIONS).map((s) => (
                 <button key={s} type="button" className="chat-chip" onClick={() => void send(s)}>
                   {s}
                 </button>
