@@ -1,26 +1,39 @@
 import { CycleHub } from "@/components/CycleHub";
 import { HelpLink } from "@/components/HelpLink";
-import { WorkflowGuide } from "@/components/WorkflowGuide";
+import { DashboardOverview, QuickActions } from "@/components/DashboardOverview";
+import { getAnalytics } from "@/lib/analytics";
+import { auth } from "@/lib/auth";
 
-export default function DashboardPage() {
+export const dynamic = "force-dynamic";
+
+export default async function DashboardPage() {
+  const session = await auth();
+  const analytics = await getAnalytics();
+  const name = session?.user?.email?.split("@")[0] ?? "there";
+  const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+
   return (
-    <div className="container">
-      <h1>Home</h1>
-      <p className="muted" style={{ marginBottom: 20, maxWidth: 720 }}>
-        Two parallel cycles — <strong>Sales</strong> (org selling to customers) and{" "}
-        <strong>Procurement</strong> (org buying from vendors). Each has deals (live workflow), contracts (clause
-        library), and analytics. Demo data loads with <code>npm run db:seed</code>.
-      </p>
-
-      <CycleHub />
-
-      <div style={{ marginTop: 28 }}>
-        <WorkflowGuide />
+    <div className="container container-wide">
+      <div className="page-head">
+        <div>
+          <div className="eyebrow">Overview</div>
+          <h1 style={{ textTransform: "capitalize" }}>Welcome back, {name}</h1>
+          <p className="muted" style={{ margin: 0 }}>{today} · portfolio at a glance</p>
+        </div>
       </div>
 
-      <p style={{ fontSize: 13, marginTop: 20 }}>
+      <DashboardOverview a={analytics} />
+
+      <div className="section-head">
+        <h2>Quick actions</h2>
+      </div>
+      <QuickActions />
+
+      <div className="section-head">
+        <h2>Your workspaces</h2>
         <HelpLink style={{ fontSize: 13 }} />
-      </p>
+      </div>
+      <CycleHub />
     </div>
   );
 }

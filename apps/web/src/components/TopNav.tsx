@@ -1,6 +1,7 @@
-import Link from "next/link";
 import { auth, signOut } from "@/lib/auth";
 import { NavLinks } from "@/components/NavLinks";
+import { Brand } from "@/components/Brand";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export async function TopNav() {
   const session = await auth();
@@ -12,11 +13,10 @@ export async function TopNav() {
 
   return (
     <nav className="nav">
-      <Link href="/dashboard" className="brand" style={{ fontSize: 16 }}>
-        contract-platform
-      </Link>
+      <Brand />
       <NavLinks />
       <div className="spacer" />
+      <ThemeToggle />
       {session?.user ? (
         <>
           <span className="muted" style={{ fontSize: 13 }}>

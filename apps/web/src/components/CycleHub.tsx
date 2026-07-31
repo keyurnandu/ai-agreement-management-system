@@ -48,18 +48,18 @@ export function CycleHub() {
       <section>
         <h2 style={{ fontSize: 16, marginBottom: 4 }}>Sales cycle</h2>
         <p className="muted" style={{ fontSize: 13, marginTop: 0, marginBottom: 12 }}>
-          Org selling to customers — SMCW → SCW → SOR, customer portal, compliance, e-sign.
+          Selling to your customers — from master agreement to order form, with a customer portal, compliance checks, and e-signature.
         </p>
         <div className="grid grid-3">
           <HubColumn
             title="Deals"
-            subtitle="Live negotiation with customers — portal, review, approve, sign."
+            subtitle="Negotiate live with customers — share a portal, review changes, approve, and sign."
             direction="ORG_SELLING"
             area="deals"
           />
           <HubColumn
             title="Contracts"
-            subtitle="Clause library (CSMCW, CSCW, CSOR) — generate PDFs for deals."
+            subtitle="Build from your clause library and generate deal-ready PDFs."
             direction="ORG_SELLING"
             area="contracts"
           />
@@ -75,18 +75,18 @@ export function CycleHub() {
       <section>
         <h2 style={{ fontSize: 16, marginBottom: 4 }}>Procurement cycle</h2>
         <p className="muted" style={{ fontSize: 13, marginTop: 0, marginBottom: 12 }}>
-          Org buying from vendors — PMCW → PCW → POR, vendor upload, compliance, e-sign. Tail spend: standalone POR.
+          Buying from your vendors — vendor portal, paper upload, compliance checks, and e-signature. Quick one-off orders supported too.
         </p>
         <div className="grid grid-3">
           <HubColumn
             title="Deals"
-            subtitle="Vendor portal, paper upload, issue loop, approve, sign."
+            subtitle="Invite vendors to a portal, upload their paper, resolve issues, approve, and sign."
             direction="ORG_BUYING"
             area="deals"
           />
           <HubColumn
             title="Contracts"
-            subtitle="Clause library (CPMCW, CPCW, CPOR) — optional parent link."
+            subtitle="Build from your clause library, optionally linked to a master agreement."
             direction="ORG_BUYING"
             area="contracts"
           />

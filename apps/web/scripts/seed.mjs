@@ -21,6 +21,7 @@ import {
   SALES_TEMPLATE_LINES,
 } from "./seed-data/sample-sales-template.mjs";
 import { SignJWT } from "jose";
+import { enrichDemoAttributes } from "./enrich-demo-attributes.mjs";
 
 const prisma = new PrismaClient();
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -1143,6 +1144,7 @@ async function main() {
   await repairDocumentFiles();
   await normalizeExistingClauses();
   await backfillDemoContractPdfs();
+  await enrichDemoAttributes(prisma);
   printDemoFlowGuide();
   console.log("Seed complete. Sign in as manager@local.test / Manager123!");
   console.log("Workflow: Deals (negotiate) → Contracts (clauses) → Documents (PDFs). Signing starts from Deals only.");
