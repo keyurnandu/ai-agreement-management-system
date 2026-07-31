@@ -62,7 +62,38 @@ export function ChatPanel({
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
+
+  function buildTranscript(): string {
+    const lines = [`# ContractIQ — Ask AI`, `on ${title} · ${new Date().toLocaleString()}`, ""];
+    for (const m of messages) {
+      lines.push(`**${m.role === "user" ? "You" : "AI"}:** ${m.text}`);
+      if (m.citations?.length) {
+        lines.push(`Sources: ${m.citations.map((c) => c.docTitle ?? `¶${c.n}`).join(", ")}`);
+      }
+      lines.push("");
+    }
+    return lines.join("\n");
+  }
+  async function copyTranscript() {
+    try {
+      await navigator.clipboard.writeText(buildTranscript());
+    } catch {
+      /* clipboard blocked */
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  }
+  function downloadTranscript() {
+    const blob = new Blob([buildTranscript()], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `contractiq-chat-${title.replace(/[^\w.-]+/g, "_").slice(0, 40)}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
@@ -133,9 +164,21 @@ export function ChatPanel({
               <div className="chat-title">Ask AI</div>
               <div className="chat-scope" title={title}>on {title}</div>
             </div>
-            <button type="button" className="btn secondary" style={{ padding: "4px 10px" }} onClick={onClose}>
-              Close
-            </button>
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              {messages.length > 0 ? (
+                <>
+                  <button type="button" className="btn secondary" style={{ padding: "4px 10px" }} title="Copy transcript" onClick={() => void copyTranscript()}>
+                    {copied ? "✓ Copied" : "Copy"}
+                  </button>
+                  <button type="button" className="btn secondary" style={{ padding: "4px 9px" }} title="Download transcript (.md)" onClick={downloadTranscript}>
+                    ⬇
+                  </button>
+                </>
+              ) : null}
+              <button type="button" className="btn secondary" style={{ padding: "4px 10px" }} onClick={onClose}>
+                Close
+              </button>
+            </div>
           </div>
 
           <div className="chat-body" ref={listRef}>
