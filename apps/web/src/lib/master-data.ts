@@ -1,8 +1,15 @@
 import { prisma } from "@/lib/db";
 import { runExtraction } from "@/lib/extraction";
+import { allocateCommercialId } from "@/lib/commercial-types";
 import type { Prisma, MasterProduct } from "@prisma/client";
 
 export type ProductSide = "SALES" | "PROCUREMENT";
+
+/** Human-readable, sequential surrogate product code: PRD-1, PRD-2, … Unique,
+ * searchable, and stable even when the manufacturer SKU/name changes. */
+export function newProductCode(): Promise<string> {
+  return allocateCommercialId("PRD");
+}
 
 export type MasterProductInput = {
   side?: string;
@@ -48,6 +55,7 @@ export async function listProducts(opts: {
   const q = opts.q?.trim();
   if (q) {
     where.OR = [
+      { skuId: { contains: q } },
       { name: { contains: q } },
       { sku: { contains: q } },
       { manufacturer: { contains: q } },
@@ -77,6 +85,7 @@ export async function createProduct(input: MasterProductInput, ownerId: string):
   const data = toData(input);
   return prisma.masterProduct.create({
     data: {
+      skuId: await newProductCode(),
       side: normalizeSide(input.side),
       name: data.name || "Untitled product",
       sku: data.sku ?? null,
@@ -278,20 +287,24 @@ export async function importProcurementProductsFromDeal(
 
   if (existing > 0) await prisma.masterProduct.deleteMany({ where: { sourceDealId: deal.id, method: "AI" } });
 
-  await prisma.masterProduct.createMany({
-    data: rows.map((r) => ({
-      side: "PROCUREMENT",
-      name: r.name || r.sku || "Unnamed product",
-      sku: r.sku ?? null,
-      manufacturer: deal.vendorName ?? null,
-      unitPrice: r.unitPrice ?? null,
-      currency: r.currency ?? "USD",
-      pricingNotes: r.description ?? null,
-      method: "AI",
-      sourceDealId: deal.id,
-      sourceDocumentId: deal.documentId,
-      ownerId: actorId,
-    })),
-  });
+  // Sequential create (not createMany) so each row gets its own PRD- code.
+  for (const r of rows) {
+    await prisma.masterProduct.create({
+      data: {
+        skuId: await newProductCode(),
+        side: "PROCUREMENT",
+        name: r.name || r.sku || "Unnamed product",
+        sku: r.sku ?? null,
+        manufacturer: deal.vendorName ?? null,
+        unitPrice: r.unitPrice ?? null,
+        currency: r.currency ?? "USD",
+        pricingNotes: r.description ?? null,
+        method: "AI",
+        sourceDealId: deal.id,
+        sourceDocumentId: deal.documentId,
+        ownerId: actorId,
+      },
+    });
+  }
   return { imported: rows.length, alreadyImported: false };
 }

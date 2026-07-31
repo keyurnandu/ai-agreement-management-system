@@ -7,6 +7,7 @@ type Side = "SALES" | "PROCUREMENT";
 
 type Product = {
   id: string;
+  skuId: string | null;
   side: Side;
   name: string;
   sku: string | null;
@@ -103,7 +104,7 @@ export function MasterDataTable() {
     const q = search.trim().toLowerCase();
     if (!q || !rows) return rows ?? [];
     return rows.filter((p) =>
-      [p.name, p.sku, p.manufacturer, p.family].some((f) => f?.toLowerCase().includes(q)),
+      [p.skuId, p.name, p.sku, p.manufacturer, p.family].some((f) => f?.toLowerCase().includes(q)),
     );
   }, [rows, search]);
 
@@ -235,7 +236,7 @@ export function MasterDataTable() {
         <input
           className="input"
           style={{ maxWidth: 340, flex: "1 1 240px" }}
-          placeholder="Search by name, SKU, manufacturer, or family…"
+          placeholder="Search by product ID, name, SKU, manufacturer, or family…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -275,6 +276,7 @@ export function MasterDataTable() {
           <table className="md-table">
             <thead>
               <tr>
+                <th>Product ID</th>
                 <th>Product</th>
                 <th>SKU</th>
                 <th>{side === "SALES" ? "Manufacturer" : "Vendor"}</th>
@@ -289,10 +291,11 @@ export function MasterDataTable() {
               {filtered.map((p) =>
                 editingId === p.id ? (
                   <tr key={p.id}>
-                    <td colSpan={canEdit ? 8 : 7}>{fields}</td>
+                    <td colSpan={canEdit ? 9 : 8}>{fields}</td>
                   </tr>
                 ) : (
                   <tr key={p.id}>
+                    <td className="mono" style={{ whiteSpace: "nowrap" }}>{p.skuId ?? "—"}</td>
                     <td>
                       <div style={{ fontWeight: 600 }}>{p.name}</div>
                       {p.pricingNotes ? <div className="muted" style={{ fontSize: 12 }}>{p.pricingNotes}</div> : null}

@@ -85,6 +85,16 @@ export const PROCUREMENT_PRODUCTS = [
   },
 ];
 
+// Sequential PRD-n product code from the shared commercial-id sequence.
+async function allocatePrd(prisma) {
+  return prisma.$transaction(async (tx) => {
+    let seq = await tx.commercialIdSequence.findUnique({ where: { prefix: "PRD" } });
+    if (!seq) seq = await tx.commercialIdSequence.create({ data: { prefix: "PRD", nextVal: 1 } });
+    await tx.commercialIdSequence.update({ where: { prefix: "PRD" }, data: { nextVal: seq.nextVal + 1 } });
+    return `PRD-${seq.nextVal}`;
+  });
+}
+
 /** Idempotent: inserts each product only if no row on that side shares its SKU. */
 export async function seedMasterProducts(prisma, ownerId) {
   let sales = 0;
@@ -93,6 +103,7 @@ export async function seedMasterProducts(prisma, ownerId) {
     if (exists) continue;
     await prisma.masterProduct.create({
       data: {
+        skuId: await allocatePrd(prisma),
         side: "SALES",
         name: p.name,
         sku: p.sku,
@@ -119,6 +130,7 @@ export async function seedMasterProducts(prisma, ownerId) {
       : null;
     await prisma.masterProduct.create({
       data: {
+        skuId: await allocatePrd(prisma),
         side: "PROCUREMENT",
         name: p.name,
         sku: p.sku,

@@ -462,9 +462,13 @@ model Deal {
 //                 then editable to correct extraction mistakes.
 model MasterProduct {
   id           String  @id @default(cuid())
+  // System-generated surrogate key that guarantees catalog integrity. NOT shown
+  // in the UI. The human `sku` below is a manufacturer part number and may repeat
+  // across (or within) vendors, so it is intentionally NOT unique.
+  skuId        String? @unique
   side         String  @default("SALES") // SALES | PROCUREMENT
   name         String
-  sku          String?
+  sku          String? // manufacturer part number — not unique
   manufacturer String? // manufacturer / organization the product is dealt with
   family       String? // product family
   unitPrice    Float?
