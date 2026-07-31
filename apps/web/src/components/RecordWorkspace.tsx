@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { AttributeHighlightProvider } from "@/components/AttributeHighlightContext";
 import { AttributesPanel } from "@/components/AttributesPanel";
-import { AskAiPanel } from "@/components/AskAiPanel";
+import { ChatPanel } from "@/components/ChatPanel";
 import type { ContextTab } from "@/lib/record-context";
 
 const TAB_LABEL: Record<ContextTab["kind"], string> = {
@@ -109,14 +109,18 @@ export function RecordWorkspace({
 
         <div className={`record-body${showAttributes ? "" : " record-body-full"}`}>
           <div className="record-main">
-            {askOpen && documentId ? (
-              <div className="record-ask-panel">
-                <AskAiPanel documentId={documentId} onClose={() => setAskOpen(false)} />
-              </div>
-            ) : null}
             {main}
             {below}
           </div>
+
+          {documentId ? (
+            <ChatPanel
+              documentId={documentId}
+              title={documentTitle ?? title}
+              open={askOpen}
+              onClose={() => setAskOpen(false)}
+            />
+          ) : null}
 
           {showAttributes ? (
           <aside className="record-attributes">
