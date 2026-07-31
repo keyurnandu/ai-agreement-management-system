@@ -158,29 +158,29 @@ export function DealSigningPanel({
 
       <ul style={{ margin: "12px 0", paddingLeft: 0, listStyle: "none", fontSize: 13 }}>
         {data.recipients.map((r) => (
-          <li
-            key={r.id}
-            style={{
-              padding: "8px 0",
-              borderBottom: "1px solid var(--border)",
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 8,
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <span>
-              <strong>{r.email}</strong>
-              <span className="muted" style={{ marginLeft: 8, fontSize: 12 }}>
-                {r.role} · {r.status}
-                {r.signedAt ? ` · signed ${new Date(r.signedAt).toLocaleDateString()}` : ""}
+          <li key={r.id} style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
+              <span>
+                <strong>{r.email}</strong>
+                <span className="muted" style={{ marginLeft: 8, fontSize: 12 }}>
+                  {r.role} · {r.status}
+                  {r.signedAt ? ` · signed ${new Date(r.signedAt).toLocaleDateString()}` : ""}
+                </span>
               </span>
-            </span>
+              {r.token && r.role !== "CC" ? (
+                <button type="button" className="btn secondary" style={{ padding: "2px 8px", fontSize: 11 }} onClick={() => copyLink(r.token!)}>
+                  Copy link
+                </button>
+              ) : null}
+            </div>
             {r.token && r.role !== "CC" ? (
-              <button type="button" className="btn secondary" style={{ padding: "2px 8px", fontSize: 11 }} onClick={() => copyLink(r.token!)}>
-                Copy sign link
-              </button>
+              <a className="sign-link-url" href={`${origin}/sign/${r.token}`} target="_blank" rel="noreferrer" title="Open this party's signing page">
+                {origin}/sign/{r.token}
+              </a>
+            ) : r.role !== "CC" ? (
+              <span className="muted" style={{ fontSize: 11, display: "block", marginTop: 4 }}>
+                Signing link appears here once you “Send for signature”.
+              </span>
             ) : null}
           </li>
         ))}

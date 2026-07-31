@@ -223,8 +223,9 @@ function IssueRow({ issue: i, counterparty }: { issue: DealIssue; counterparty: 
         <span className="muted" style={{ fontSize: 10 }}>Compliance</span>
       ) : null}
       {i.vendorResponse ? (
-        <p className="muted" style={{ fontSize: 11, margin: "4px 0 0" }}>
-          {counterparty}: {i.vendorResponse}
+        <p className="issue-note" style={{ fontSize: 11, margin: "6px 0 0" }}>
+          <strong>{i.status === "WAIVED" ? "Waived — reason" : i.status === "RESOLVED" ? "Resolution note" : counterparty}:</strong>{" "}
+          {i.vendorResponse}
         </p>
       ) : null}
     </>

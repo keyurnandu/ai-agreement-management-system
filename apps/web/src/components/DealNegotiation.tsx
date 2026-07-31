@@ -122,6 +122,14 @@ export function DealToolbar({ dealId }: { dealId: string }) {
     void load();
   }, [load]);
 
+  // Live-refresh the open-issue count and the Approve gate when issues are
+  // resolved/waived in the issues panel (which fires "deal-refresh").
+  useEffect(() => {
+    const onRefresh = () => void load();
+    window.addEventListener("deal-refresh", onRefresh);
+    return () => window.removeEventListener("deal-refresh", onRefresh);
+  }, [load]);
+
   async function act(path: string, actionId: string, method = "POST", body?: unknown) {
     setBusyAction(actionId);
     setMsg(null);

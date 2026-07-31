@@ -245,6 +245,19 @@ export function parseProductsTable(markdown: string): ParsedRow[] {
   return out;
 }
 
+/** Collapse rows the map-reduce extractor repeats across document sections. */
+function dedupeRows(rows: ParsedRow[]): ParsedRow[] {
+  const seen = new Set<string>();
+  const out: ParsedRow[] = [];
+  for (const r of rows) {
+    const key = `${(r.sku ?? "").toLowerCase()}|${(r.name ?? "").toLowerCase()}`;
+    if (key === "|" || seen.has(key)) continue;
+    seen.add(key);
+    out.push(r);
+  }
+  return out;
+}
+
 async function productsMarkdownFor(documentId: string): Promise<string | null> {
   const def = await prisma.attributeDefinition.findUnique({ where: { key: "products_services" }, select: { id: true } });
   if (!def) return null;
@@ -273,16 +286,19 @@ export async function importProcurementProductsFromDeal(
   if (existing > 0 && !opts?.replace) return { imported: 0, alreadyImported: true };
 
   let markdown = await productsMarkdownFor(deal.documentId);
-  if (!markdown) {
-    // Not extracted yet — run the targeted line-item extraction, then read it back.
+  let rows = dedupeRows(markdown ? parseProductsTable(markdown) : []);
+  if (rows.length === 0) {
+    // Either not extracted yet, or a stale/empty value (e.g. a prior "N/A" that
+    // predates the current document). (Re)run the targeted extraction and retry
+    // so a stale attribute never masks real line items.
     try {
       await runExtraction(deal.documentId, ["products_services"]);
     } catch {
       /* extraction may be unavailable; fall through to empty */
     }
     markdown = await productsMarkdownFor(deal.documentId);
+    rows = dedupeRows(markdown ? parseProductsTable(markdown) : []);
   }
-  const rows = markdown ? parseProductsTable(markdown) : [];
   if (rows.length === 0) return { imported: 0, alreadyImported: false, note: "No line items found in the signed document." };
 
   if (existing > 0) await prisma.masterProduct.deleteMany({ where: { sourceDealId: deal.id, method: "AI" } });
