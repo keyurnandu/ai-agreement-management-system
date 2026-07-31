@@ -9,23 +9,24 @@ export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const body = (await req.json()) as { tool?: string; dealId?: string };
-  if (!body.tool || !body.dealId) return NextResponse.json({ error: "tool and dealId required" }, { status: 400 });
+  const body = (await req.json()) as { tool?: string; dealId?: string; args?: Record<string, string> };
+  if (!body.tool) return NextResponse.json({ error: "tool required" }, { status: 400 });
+  if (body.tool !== "create_deal" && !body.dealId) return NextResponse.json({ error: "dealId required" }, { status: 400 });
 
   await recordAudit({
     action: "assistant.execute",
     actorId: session.user.id,
     actorEmail: session.user.email,
     resourceType: "ASSISTANT",
-    metadata: { tool: body.tool, dealId: body.dealId },
+    metadata: { tool: body.tool, dealId: body.dealId ?? null },
   });
 
   try {
-    const result = await executeAssistantAction(body.tool, body.dealId, {
-      id: session.user.id,
-      role: session.user.role,
-      email: session.user.email,
-    });
+    const result = await executeAssistantAction(
+      body.tool,
+      { dealId: body.dealId, args: body.args },
+      { id: session.user.id, role: session.user.role, email: session.user.email },
+    );
     return NextResponse.json(result);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "assistant error";

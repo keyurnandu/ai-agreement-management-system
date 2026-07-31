@@ -1,8 +1,10 @@
 import { prisma } from "@/lib/db";
 import { intelligence } from "@/lib/services/client";
-import { runComplianceCheck, canAccessDeal } from "@/lib/procurement";
+import { runComplianceCheck, canAccessDeal, createPlaceholderDocument, vendorToken } from "@/lib/procurement";
+import { allocateCommercialId, legacyRecordType } from "@/lib/commercial-types";
 import { answerAboutPortfolio } from "@/lib/portfolio-qa";
 import { answerAboutDocument } from "@/lib/document-qa";
+import { runExtraction } from "@/lib/extraction";
 import { roleAtLeast } from "@/lib/rbac";
 
 export type Actor = { id: string; role: string; email?: string | null };
@@ -15,20 +17,22 @@ export type AssistantResult = {
   reply: string;
   tool: string;
   steps?: Step[];
-  proposal?: { tool: string; dealId?: string; title?: string; summary: string };
+  proposal?: { tool: string; dealId?: string; title?: string; summary: string; args?: Record<string, string> };
   links?: { href: string; label: string }[];
 };
 
 const MAX_STEPS = 6;
-const CONFIRM_TOOLS = new Set(["send_for_signature", "approve_deal"]);
+const CONFIRM_TOOLS = new Set(["send_for_signature", "approve_deal", "create_deal"]);
 
 const TOOL_CATALOG = `
 - find: List deals matching a filter, to decide what to act on next. args: { filter?: "at_risk"|"expiring"|"all", direction?: "sales"|"procurement" }
 - run_compliance: Run the compliance rule-pack check on a deal. args: { dealRef: string }
 - resolve_issues: Resolve every open review issue on a deal. args: { dealRef: string }
+- run_extraction: Extract contract data (dates, value, parties, governing law, …) from a deal's document. args: { dealRef: string }
 - create_collection: Create a new document collection (folder). args: { title: string }
 - move_document: Move a document into a collection. args: { docRef: string, collectionRef: string }
 - answer: Answer a question about the portfolio or a specific deal (TERMINAL — ends the task). args: { dealRef?: string, question: string }
+- create_deal: Create a new deal. args: { direction: "sales"|"procurement", title: string, counterparty: string }  [CONFIRM]
 - approve_deal: Approve a deal's document (needs 0 open issues). args: { dealRef: string }  [CONFIRM]
 - send_for_signature: Approve + start signing. args: { dealRef: string }  [CONFIRM]
 - done: The task is complete. args: {}  (put the final summary in "say")
@@ -136,6 +140,18 @@ export async function runAssistant(message: string, actor: Actor): Promise<Assis
 
     // Confirmation-required → stop and surface the proposal (with steps so far).
     if (CONFIRM_TOOLS.has(tool)) {
+      if (tool === "create_deal") {
+        const dir = /(proc|buy|vendor)/i.test(args.direction ?? "") ? "procurement" : "sales";
+        const title = (args.title ?? "").trim() || "New deal";
+        const counterparty = (args.counterparty ?? "").trim();
+        const summary = `Create a new ${dir} deal “${title}”${counterparty ? ` with ${counterparty}` : ""}`;
+        return {
+          reply: say || `${summary}?`,
+          tool,
+          steps,
+          proposal: { tool, summary, args: { direction: dir, title, counterparty } },
+        };
+      }
       const d = resolveDeal(deals, args.dealRef);
       if (!d) {
         finalReply = "Which deal did you mean?";
@@ -218,6 +234,15 @@ async function execSafe(
     return { result: `${d.commercialId}: resolved ${open.length} issues`, link: dealLink(d) };
   }
 
+  if (tool === "run_extraction") {
+    const d = resolveDeal(deals, args.dealRef);
+    if (!d) return { result: "Deal not found." };
+    if (!d.documentId) return { result: `${d.commercialId}: no document attached.` };
+    if (!(await canAccessDeal(actor, d.id))) return { result: "No access to that deal." };
+    const res = await runExtraction(d.documentId);
+    return { result: res.error ? `${d.commercialId}: ${res.error}` : `${d.commercialId}: extracted ${res.extracted} attributes`, link: dealLink(d) };
+  }
+
   if (tool === "create_collection") {
     const title = (args.title ?? "").trim();
     if (!title) return { result: "No collection name given." };
@@ -241,7 +266,43 @@ async function execSafe(
 }
 
 /** Execute a previously-proposed confirmation action. */
-export async function executeAssistantAction(tool: string, dealId: string, actor: Actor): Promise<AssistantResult> {
+export async function executeAssistantAction(
+  tool: string,
+  payload: { dealId?: string; args?: Record<string, string> },
+  actor: Actor,
+): Promise<AssistantResult> {
+  // Create a new deal (no dealId — build from the proposed args).
+  if (tool === "create_deal") {
+    if (!roleAtLeast(actor.role, "EDITOR")) return { reply: "You need editor access to create deals.", tool };
+    const a = payload.args ?? {};
+    const dir = /(proc|buy|vendor)/i.test(a.direction ?? "") ? "ORG_BUYING" : "ORG_SELLING";
+    const title = (a.title ?? "").trim() || "New deal";
+    const counterparty = (a.counterparty ?? "").trim();
+    const typeKey = dir === "ORG_BUYING" ? "por" : "sor";
+    const type = await prisma.commercialRecordType.findFirst({ where: { key: typeKey }, select: { id: true, prefix: true, key: true, name: true, direction: true, domain: true, isRoot: true } });
+    if (!type) return { reply: "Couldn't find the deal type to create.", tool };
+    const commercialId = await allocateCommercialId(type.prefix);
+    const documentId = await createPlaceholderDocument(title, actor.id, "Created by assistant");
+    const vendorEmail = counterparty ? `legal@${counterparty.toLowerCase().replace(/[^a-z0-9]+/g, "")}.example` : "counterparty@example.com";
+    const deal = await prisma.deal.create({
+      data: {
+        commercialId,
+        commercialTypeId: type.id,
+        recordType: legacyRecordType(type as never),
+        title,
+        direction: dir,
+        documentId,
+        ownerId: actor.id,
+        vendorEmail,
+        vendorName: counterparty || null,
+        vendorAccessToken: vendorToken(),
+        status: "DRAFT",
+      },
+    });
+    return { reply: `Created ${commercialId} — “${title}”${counterparty ? ` with ${counterparty}` : ""} (draft). Open it to add a contract or send to the counterparty.`, tool, links: [{ href: `/deals/${deal.id}`, label: commercialId }] };
+  }
+
+  const dealId = payload.dealId ?? "";
   const d = await prisma.deal.findUnique({ where: { id: dealId }, select: { id: true, commercialId: true, title: true, status: true } });
   if (!d) return { reply: "That deal no longer exists.", tool };
   if (!(await canAccessDeal(actor, d.id))) return { reply: "You don't have access to that deal.", tool };

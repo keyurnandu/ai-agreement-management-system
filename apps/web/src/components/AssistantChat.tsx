@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 type LinkT = { href: string; label: string };
-type Proposal = { tool: string; dealId?: string; title?: string; summary: string };
+type Proposal = { tool: string; dealId?: string; title?: string; summary: string; args?: Record<string, string> };
 type StepT = { tool: string; result: string };
 type Msg = { role: "user" | "assistant"; text: string; links?: LinkT[]; proposal?: Proposal; steps?: StepT[] };
 
@@ -65,7 +65,7 @@ export function AssistantChat() {
       const r = await fetch("/api/assistant/execute", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tool: p.tool, dealId: p.dealId }),
+        body: JSON.stringify({ tool: p.tool, dealId: p.dealId, args: p.args }),
       });
       const j = (await r.json()) as Msg & { reply?: string };
       setHandled((h) => new Set(h).add(idx));
