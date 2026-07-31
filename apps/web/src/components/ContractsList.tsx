@@ -115,6 +115,7 @@ export function ContractsList({ direction }: { direction?: "ORG_SELLING" | "ORG_
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   const load = useCallback(async () => {
     const r = await fetch("/api/contracts");
@@ -138,6 +139,18 @@ export function ContractsList({ direction }: { direction?: "ORG_SELLING" | "ORG_
     () => (contracts ? (direction ? contracts.filter((c) => c.direction === direction) : contracts) : []),
     [contracts, direction],
   );
+
+  const searchMatches = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return null;
+    return filtered.filter(
+      (c) =>
+        c.title.toLowerCase().includes(q) ||
+        (c.commercialId?.toLowerCase().includes(q) ?? false) ||
+        (c.recordTypeLabel?.toLowerCase().includes(q) ?? false) ||
+        (c.template?.toLowerCase().includes(q) ?? false),
+    );
+  }, [filtered, search]);
 
   const filteredIds = useMemo(() => filtered.map((c) => c.id), [filtered]);
   const allSelected = filteredIds.length > 0 && filteredIds.every((id) => selected.has(id));
@@ -206,7 +219,7 @@ export function ContractsList({ direction }: { direction?: "ORG_SELLING" | "ORG_
 
   if (!contracts) return <p className="muted">Loading…</p>;
 
-  if (tree.length === 0) {
+  if (filtered.length === 0) {
     const newHref =
       direction === "ORG_BUYING"
         ? "/contracts/new?direction=ORG_BUYING&from=/contracts/procurement"
@@ -224,8 +237,28 @@ export function ContractsList({ direction }: { direction?: "ORG_SELLING" | "ORG_
     );
   }
 
+  const flatNodes = (searchMatches ?? []).map((c) => ({ ...c, parentId: c.parentContractId, children: [] as never[] }));
+
   return (
     <div>
+      <div className="row" style={{ marginBottom: 12, gap: 8 }}>
+        <input
+          className="input"
+          style={{ maxWidth: 340, flex: "1 1 240px" }}
+          placeholder="Search contracts by name, ID, or type…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        {searchMatches ? (
+          <span className="muted" style={{ fontSize: 12, alignSelf: "center" }}>
+            {searchMatches.length} match{searchMatches.length === 1 ? "" : "es"}
+            <button type="button" onClick={() => setSearch("")} style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", marginLeft: 8, fontSize: 12 }}>
+              clear
+            </button>
+          </span>
+        ) : null}
+      </div>
+
       {isAdmin ? (
         <div className="card contracts-bulk-bar" style={{ marginBottom: 12, padding: "10px 14px" }}>
           <div className="row" style={{ justifyContent: "flex-start", flexWrap: "wrap", gap: 12 }}>
@@ -262,19 +295,19 @@ export function ContractsList({ direction }: { direction?: "ORG_SELLING" | "ORG_
         </div>
       ) : null}
 
-      {tree.map((n) => (
-        <ContractNode
-          key={n.id}
-          node={n}
-          depth={0}
-          types={types}
-          returnTo={returnTo}
-          listDirection={direction}
-          isAdmin={isAdmin}
-          selected={selected}
-          onToggle={toggleOne}
-        />
-      ))}
+      {searchMatches ? (
+        flatNodes.length === 0 ? (
+          <div className="card"><p className="muted" style={{ margin: 0 }}>No contracts match “{search.trim()}”.</p></div>
+        ) : (
+          flatNodes.map((n) => (
+            <ContractNode key={n.id} node={n} depth={0} types={types} returnTo={returnTo} listDirection={direction} isAdmin={isAdmin} selected={selected} onToggle={toggleOne} />
+          ))
+        )
+      ) : (
+        tree.map((n) => (
+          <ContractNode key={n.id} node={n} depth={0} types={types} returnTo={returnTo} listDirection={direction} isAdmin={isAdmin} selected={selected} onToggle={toggleOne} />
+        ))
+      )}
     </div>
   );
 }

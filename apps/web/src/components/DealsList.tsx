@@ -103,6 +103,7 @@ export function DealsList({ direction }: { direction?: "ORG_SELLING" | "ORG_BUYI
   const router = useRouter();
   const [deals, setDeals] = useState<DealRow[] | null>(null);
   const [types, setTypes] = useState<CommType[]>([]);
+  const [search, setSearch] = useState("");
 
   const returnTo = direction === "ORG_BUYING" ? "/deals/procurement" : "/deals/sales";
   const newHref = `/deals/new?direction=${direction ?? "ORG_SELLING"}&from=${encodeURIComponent(returnTo)}`;
@@ -131,7 +132,7 @@ export function DealsList({ direction }: { direction?: "ORG_SELLING" | "ORG_BUYI
   const filtered = direction ? deals.filter((d) => d.direction === direction) : deals;
   const tree = buildHierarchy(filtered.map((d) => ({ ...d, parentId: d.parentDealId })));
 
-  if (tree.length === 0) {
+  if (filtered.length === 0) {
     return (
       <div className="card">
         <p className="muted" style={{ marginBottom: 12 }}>
@@ -145,11 +146,51 @@ export function DealsList({ direction }: { direction?: "ORG_SELLING" | "ORG_BUYI
     );
   }
 
+  const query = search.trim().toLowerCase();
+  const searchMatches = query
+    ? filtered.filter(
+        (d) =>
+          d.title.toLowerCase().includes(query) ||
+          (d.commercialId?.toLowerCase().includes(query) ?? false) ||
+          d.vendorEmail.toLowerCase().includes(query) ||
+          d.recordTypeLabel.toLowerCase().includes(query),
+      )
+    : null;
+  const flatNodes = (searchMatches ?? []).map((d) => ({ ...d, parentId: d.parentDealId, children: [] as never[] }));
+
   return (
     <div>
-      {tree.map((n) => (
-        <DealNode key={n.id} node={n} depth={0} types={types} onDelete={onDelete} listDirection={direction} returnTo={returnTo} />
-      ))}
+      <div className="row" style={{ marginBottom: 12, gap: 8 }}>
+        <input
+          className="input"
+          style={{ maxWidth: 340, flex: "1 1 240px" }}
+          placeholder="Search deals by name, ID, or counterparty…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        {searchMatches ? (
+          <span className="muted" style={{ fontSize: 12, alignSelf: "center" }}>
+            {searchMatches.length} match{searchMatches.length === 1 ? "" : "es"}
+            <button type="button" onClick={() => setSearch("")} style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", marginLeft: 8, fontSize: 12 }}>
+              clear
+            </button>
+          </span>
+        ) : null}
+      </div>
+
+      {searchMatches ? (
+        flatNodes.length === 0 ? (
+          <div className="card"><p className="muted" style={{ margin: 0 }}>No deals match “{search.trim()}”.</p></div>
+        ) : (
+          flatNodes.map((n) => (
+            <DealNode key={n.id} node={n} depth={0} types={types} onDelete={onDelete} listDirection={direction} returnTo={returnTo} />
+          ))
+        )
+      ) : (
+        tree.map((n) => (
+          <DealNode key={n.id} node={n} depth={0} types={types} onDelete={onDelete} listDirection={direction} returnTo={returnTo} />
+        ))
+      )}
     </div>
   );
 }

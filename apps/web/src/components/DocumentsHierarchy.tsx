@@ -205,6 +205,7 @@ export function DocumentsHierarchy({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [chat, setChat] = useState<{ id: string; title: string } | null>(null);
+  const [search, setSearch] = useState("");
 
   const refresh = useCallback(() => {
     void fetch("/api/documents/list")
@@ -225,6 +226,13 @@ export function DocumentsHierarchy({
     if (typeof isAdminProp === "boolean") setIsAdmin(isAdminProp);
   }, [isAdminProp]);
 
+  // Reliable client refresh after create/upload/move (dispatched by those actions).
+  useEffect(() => {
+    const onRefresh = () => refresh();
+    window.addEventListener("documents-refresh", onRefresh);
+    return () => window.removeEventListener("documents-refresh", onRefresh);
+  }, [refresh]);
+
   const docsById = useMemo(() => new Map(docs.map((d) => [d.id, d])), [docs]);
   const allIds = useMemo(() => docs.map((d) => d.id), [docs]);
   const allSelected = allIds.length > 0 && allIds.every((id) => selected.has(id));
@@ -235,6 +243,17 @@ export function DocumentsHierarchy({
     () => docs.filter((d) => d.kind === "COLLECTION").map((d) => ({ id: d.id, title: d.title })),
     [docs],
   );
+
+  const searchMatches = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return null;
+    return docs.filter(
+      (d) =>
+        d.title.toLowerCase().includes(q) ||
+        (d.commercialId?.toLowerCase().includes(q) ?? false) ||
+        (d.ownerEmail?.toLowerCase().includes(q) ?? false),
+    );
+  }, [docs, search]);
 
   function toggleOne(id: string) {
     setSelected((prev) => {
@@ -287,7 +306,7 @@ export function DocumentsHierarchy({
     }
   }
 
-  if (tree.length === 0) {
+  if (docs.length === 0) {
     return (
       <div className="card">
         <p className="muted">No documents yet. Upload PDFs or create a collection folder.</p>
@@ -295,8 +314,32 @@ export function DocumentsHierarchy({
     );
   }
 
+  const flatNodes = (searchMatches ?? []).map((d) => ({ ...d, parentId: d.collectionParentId, children: [] as never[] }));
+
   return (
     <div>
+      <div className="row" style={{ marginBottom: 12, gap: 8 }}>
+        <input
+          className="input"
+          style={{ maxWidth: 340, flex: "1 1 240px" }}
+          placeholder="Search documents & collections by name, ID, or owner…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        {searchMatches ? (
+          <span className="muted" style={{ fontSize: 12, alignSelf: "center" }}>
+            {searchMatches.length} match{searchMatches.length === 1 ? "" : "es"}
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", marginLeft: 8, fontSize: 12 }}
+            >
+              clear
+            </button>
+          </span>
+        ) : null}
+      </div>
+
       {isAdmin ? (
         <div className="card contracts-bulk-bar" style={{ marginBottom: 12, padding: "10px 14px" }}>
           <div className="row" style={{ justifyContent: "flex-start", flexWrap: "wrap", gap: 12 }}>
@@ -337,19 +380,41 @@ export function DocumentsHierarchy({
         </div>
       ) : null}
 
-      {tree.map((n) => (
-        <DocNode
-          key={n.id}
-          node={n}
-          depth={0}
-          onRefresh={refresh}
-          isAdmin={isAdmin}
-          selected={selected}
-          onToggle={toggleOne}
-          collections={collections}
-          onAsk={(cid, ctitle) => setChat({ id: cid, title: ctitle })}
-        />
-      ))}
+      {searchMatches ? (
+        flatNodes.length === 0 ? (
+          <div className="card">
+            <p className="muted" style={{ margin: 0 }}>No documents match “{search.trim()}”.</p>
+          </div>
+        ) : (
+          flatNodes.map((n) => (
+            <DocNode
+              key={n.id}
+              node={n}
+              depth={0}
+              onRefresh={refresh}
+              isAdmin={isAdmin}
+              selected={selected}
+              onToggle={toggleOne}
+              collections={collections}
+              onAsk={(cid, ctitle) => setChat({ id: cid, title: ctitle })}
+            />
+          ))
+        )
+      ) : (
+        tree.map((n) => (
+          <DocNode
+            key={n.id}
+            node={n}
+            depth={0}
+            onRefresh={refresh}
+            isAdmin={isAdmin}
+            selected={selected}
+            onToggle={toggleOne}
+            collections={collections}
+            onAsk={(cid, ctitle) => setChat({ id: cid, title: ctitle })}
+          />
+        ))
+      )}
 
       {chat ? (
         <ChatPanel documentId={chat.id} title={chat.title} scope="collection" open onClose={() => setChat(null)} />

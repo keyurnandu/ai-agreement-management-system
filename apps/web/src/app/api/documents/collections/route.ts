@@ -19,6 +19,10 @@ export async function POST(req: Request) {
   if (!roleAtLeast(session.user.role, "EDITOR")) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
+  const owner = await prisma.user.findUnique({ where: { id: session.user.id }, select: { id: true } });
+  if (!owner) {
+    return NextResponse.json({ error: "Your session is out of date — please sign out and sign in again." }, { status: 401 });
+  }
 
   const body = (await req.json()) as {
     title?: string;
