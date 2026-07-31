@@ -428,14 +428,14 @@ async function seedCompliancePacks(userId) {
   const packs = [
     {
       id: "pack_adobe_procurement",
-      name: "Sample compliance checks — Procurement",
+      name: "Adobe — Procurement compliance rules",
       direction: "ORG_BUYING",
       rulesText: PROCUREMENT_CHECKS_TEXT,
       documentId: procDocId,
     },
     {
       id: "pack_adobe_sales",
-      name: "Sample compliance checks — Sales",
+      name: "Adobe — Sales compliance rules",
       direction: "ORG_SELLING",
       rulesText: SALES_CHECKS_TEXT,
       documentId: salesDocId,
