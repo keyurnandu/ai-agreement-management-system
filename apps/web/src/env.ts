@@ -58,7 +58,7 @@ export const env = {
   INTELLIGENCE_URL: process.env.INTELLIGENCE_URL ?? "http://localhost:8002",
 
   EMAIL_PROVIDER: process.env.EMAIL_PROVIDER ?? "console",
-  EMAIL_FROM: process.env.EMAIL_FROM ?? "noreply@contract-platform.local",
+  EMAIL_FROM: process.env.EMAIL_FROM ?? "ContractIQ <noreply@contractiq.local>",
   SMTP_HOST: process.env.SMTP_HOST ?? "",
   SMTP_PORT: process.env.SMTP_PORT ?? "587",
   SMTP_SECURE: process.env.SMTP_SECURE ?? "false",

@@ -18,7 +18,7 @@ export function GET() {
   const spec = {
     openapi: "3.0.3",
     info: {
-      title: "contract-platform API",
+      title: "ContractIQ API",
       version: "1.0.0",
       description:
         "External read API. Authenticate with `Authorization: Bearer cpk_...`. Keys and scopes are managed in the Developer settings. Webhooks deliver events with an `X-CP-Signature: sha256=<HMAC>` header.",

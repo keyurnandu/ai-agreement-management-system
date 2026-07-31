@@ -34,6 +34,8 @@ export function DealIssuesPanel({
   const [data, setData] = useState<DealIssuesData | null>(null);
   const [compliance, setCompliance] = useState<ComplianceStatus>({ phase: "idle" });
 
+  const [busyIssue, setBusyIssue] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     const r = await fetch(`/api/deals/${dealId}`);
     if (r.ok) {
@@ -41,6 +43,30 @@ export function DealIssuesPanel({
       setData({ direction: j.deal.direction, issues: j.deal.issues ?? [] });
     }
   }, [dealId]);
+
+  const updateIssue = useCallback(
+    async (issueId: string, status: "RESOLVED" | "WAIVED" | "OPEN") => {
+      setBusyIssue(issueId);
+      try {
+        let note: string | undefined;
+        if (status === "WAIVED") {
+          const reason = window.prompt("Reason for waiving this issue (recorded on the deal):");
+          if (reason === null) return;
+          note = reason;
+        }
+        await fetch(`/api/deals/${dealId}/issues/${issueId}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ status, note }),
+        });
+        await load();
+        notifyDealRefresh();
+      } finally {
+        setBusyIssue(null);
+      }
+    },
+    [dealId, load],
+  );
 
   useEffect(() => {
     void load();
@@ -116,25 +142,50 @@ export function DealIssuesPanel({
         <ul className="negotiation-issue-list">
           {data.issues.map((i) => {
             const active = activeIssueId === i.id;
-            if (onIssueClick) {
-              return (
-                <li key={i.id}>
-                  <button
-                    type="button"
-                    className={`negotiation-issue-item${active ? " active" : ""}${i.status !== "OPEN" ? " resolved" : ""}`}
-                    onClick={() => onIssueClick(i)}
-                  >
-                    <IssueRow issue={i} counterparty={counterparty} />
-                  </button>
-                </li>
-              );
-            }
             return (
               <li
                 key={i.id}
-                className={`negotiation-issue-item${i.status !== "OPEN" ? " resolved" : ""}`}
+                className={`negotiation-issue-item${i.status !== "OPEN" ? " resolved" : ""}${active ? " active" : ""}`}
               >
-                <IssueRow issue={i} counterparty={counterparty} />
+                {onIssueClick ? (
+                  <button type="button" className="issue-rowbtn" onClick={() => onIssueClick(i)}>
+                    <IssueRow issue={i} counterparty={counterparty} />
+                  </button>
+                ) : (
+                  <IssueRow issue={i} counterparty={counterparty} />
+                )}
+                <div className="issue-actions">
+                  {i.status === "OPEN" ? (
+                    <>
+                      <button
+                        type="button"
+                        className="btn secondary"
+                        disabled={busyIssue === i.id}
+                        onClick={() => void updateIssue(i.id, "RESOLVED")}
+                      >
+                        ✓ Resolve
+                      </button>
+                      <button
+                        type="button"
+                        className="btn secondary"
+                        disabled={busyIssue === i.id}
+                        onClick={() => void updateIssue(i.id, "WAIVED")}
+                        title="Accept this deviation and record a reason"
+                      >
+                        Waive
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn secondary"
+                      disabled={busyIssue === i.id}
+                      onClick={() => void updateIssue(i.id, "OPEN")}
+                    >
+                      Reopen
+                    </button>
+                  )}
+                </div>
               </li>
             );
           })}

@@ -39,7 +39,7 @@ class SmtpEmailProvider implements EmailProvider {
   async send(msg: EmailMessage): Promise<void> {
     const t = await this.getTransporter();
     await t.sendMail({
-      from: process.env.EMAIL_FROM ?? "noreply@contract-platform.local",
+      from: process.env.EMAIL_FROM ?? "ContractIQ <noreply@contractiq.local>",
       to: msg.to,
       subject: msg.subject,
       text: msg.text,

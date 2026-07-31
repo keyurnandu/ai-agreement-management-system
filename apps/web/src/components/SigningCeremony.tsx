@@ -141,7 +141,7 @@ export function SigningCeremony({ token }: { token: string }) {
     <div style={{ maxWidth: 900, margin: "0 auto" }}>
       <div className="row" style={{ margin: "16px 0" }}>
         <div>
-          <span className="brand">contract-platform</span>
+          <span className="brand">Contract<span style={{ color: "var(--accent)" }}>IQ</span></span>
           <h1 style={{ margin: "4px 0 2px" }}>{p.agreementTitle}</h1>
           <p className="muted" style={{ fontSize: 13 }}>
             Signing as {p.recipient.email} · {p.fields.length} field(s) to complete
