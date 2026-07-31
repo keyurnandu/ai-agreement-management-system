@@ -63,21 +63,20 @@ export async function getCommercialTypeByKey(key: string) {
   return (await listCommercialTypes(false)).find((t) => t.id === row.id) ?? null;
 }
 
-/** Allocate the next global ID for a prefix, e.g. SMCW-1. */
+/** Allocate the next global ID for a prefix, e.g. SMCW-1.
+ * Uses a single atomic upsert+increment so two concurrent callers can never
+ * receive the same id (the previous read-then-write could return duplicates,
+ * violating the @unique surrogate keys that depend on it). */
 export async function allocateCommercialId(prefix: string): Promise<string> {
   const p = prefix.toUpperCase();
-  return prisma.$transaction(async (tx) => {
-    let seq = await tx.commercialIdSequence.findUnique({ where: { prefix: p } });
-    if (!seq) {
-      seq = await tx.commercialIdSequence.create({ data: { prefix: p, nextVal: 1 } });
-    }
-    const commercialId = `${p}-${seq.nextVal}`;
-    await tx.commercialIdSequence.update({
-      where: { prefix: p },
-      data: { nextVal: seq.nextVal + 1 },
-    });
-    return commercialId;
+  // create → seed nextVal to 2 (we consume 1); update → post-increment value,
+  // so the id we consumed is `nextVal - 1` in both branches.
+  const seq = await prisma.commercialIdSequence.upsert({
+    where: { prefix: p },
+    create: { prefix: p, nextVal: 2 },
+    update: { nextVal: { increment: 1 } },
   });
+  return `${p}-${seq.nextVal - 1}`;
 }
 
 export async function validateParentForType(

@@ -53,8 +53,15 @@ function parsePrice(v: number | string | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** List products, optionally filtered by side and a free-text query. Managers see
- * everything; other roles see their own rows. */
+/** Sanitize a currency code to letters only (defends the generated PDF against
+ * markup injected via a non-ISO currency string). Defaults to USD. */
+function cleanCurrency(v: string | null | undefined): string {
+  return String(v ?? "").replace(/[^A-Za-z]/g, "").toUpperCase().slice(0, 6) || "USD";
+}
+
+/** List products, optionally filtered by side and a free-text query. The catalog
+ * is shared org-wide (every authenticated user reads it); pass `scopeToOwner`
+ * only if a caller needs to restrict to a single owner. */
 export async function listProducts(opts: {
   side?: ProductSide;
   q?: string;
@@ -88,7 +95,7 @@ function toData(input: MasterProductInput): Partial<Prisma.MasterProductUnchecke
   if (input.quantity !== undefined) data.quantity = parsePrice(input.quantity);
   if (input.creditsPurchased !== undefined) data.creditsPurchased = parsePrice(input.creditsPurchased);
   if (input.pricingNotes !== undefined) data.pricingNotes = input.pricingNotes?.trim() || null;
-  if (input.currency !== undefined) data.currency = (input.currency?.trim() || "USD").toUpperCase().slice(0, 6);
+  if (input.currency !== undefined) data.currency = cleanCurrency(input.currency);
   if (input.unitPrice !== undefined) data.unitPrice = parsePrice(input.unitPrice);
   if (input.validFrom !== undefined) data.validFrom = parseDate(input.validFrom);
   if (input.validUntil !== undefined) data.validUntil = parseDate(input.validUntil);
@@ -177,16 +184,21 @@ export function normalizeLineItems(raw: unknown): LineItem[] {
         description: o.description ? String(o.description) : undefined,
         quantity: Number.isFinite(qty) && qty > 0 ? qty : 1,
         unitPrice: parsePrice(o.unitPrice as number | string | null),
-        currency: (o.currency ? String(o.currency) : "USD").toUpperCase().slice(0, 6),
+        currency: cleanCurrency(o.currency as string | null),
       };
     })
     .filter((x): x is LineItem => x !== null);
 }
 
-export function lineItemsTotal(items: LineItem[]): { currency: string; total: number } {
-  const currency = items.find((i) => i.currency)?.currency ?? "USD";
-  const total = items.reduce((sum, i) => sum + (i.unitPrice ?? 0) * (i.quantity || 1), 0);
-  return { currency, total };
+/** Subtotal per currency — never sums across currencies (which would be
+ * meaningless / wrong on a generated contract). */
+export function lineItemTotals(items: LineItem[]): { currency: string; total: number }[] {
+  const byCurrency = new Map<string, number>();
+  for (const i of items) {
+    const cur = (i.currency || "USD").toUpperCase();
+    byCurrency.set(cur, (byCurrency.get(cur) ?? 0) + (i.unitPrice ?? 0) * (i.quantity || 1));
+  }
+  return [...byCurrency.entries()].map(([currency, total]) => ({ currency, total }));
 }
 
 /** Build a line item from a catalog product the salesperson picked. */
@@ -400,31 +412,33 @@ export async function importProcurementProductsFromDeal(
     }));
   }
 
-  if (existing > 0) await prisma.masterProduct.deleteMany({ where: { sourceDealId: deal.id, method: "AI" } });
-
-  // Sequential create (not createMany) so each row gets its own PRD- code.
+  // Pre-allocate PRD- codes up front, then swap the deal's rows in ONE
+  // transaction so a mid-write failure can never leave the catalog half-wiped.
+  const data = [];
   for (const r of rich) {
-    await prisma.masterProduct.create({
-      data: {
-        skuId: await newProductCode(),
-        side: "PROCUREMENT",
-        name: r.name || r.sku || "Unnamed product",
-        sku: r.sku ?? null,
-        manufacturer: deal.vendorName ?? null,
-        pricingModel: r.pricingModel ?? null,
-        quantity: r.quantity ?? null,
-        creditsPurchased: r.creditsPurchased ?? null,
-        unitPrice: r.unitPrice ?? null,
-        currency: r.currency ?? "USD",
-        pricingNotes: r.notes ?? null,
-        validFrom: parseDate(r.startDate),
-        validUntil: parseDate(r.endDate),
-        method: "AI",
-        sourceDealId: deal.id,
-        sourceDocumentId: deal.documentId,
-        ownerId: actorId,
-      },
+    data.push({
+      skuId: await newProductCode(),
+      side: "PROCUREMENT",
+      name: r.name || r.sku || "Unnamed product",
+      sku: r.sku ?? null,
+      manufacturer: deal.vendorName ?? null,
+      pricingModel: r.pricingModel ?? null,
+      quantity: r.quantity ?? null,
+      creditsPurchased: r.creditsPurchased ?? null,
+      unitPrice: r.unitPrice ?? null,
+      currency: r.currency ?? "USD",
+      pricingNotes: r.notes ?? null,
+      validFrom: parseDate(r.startDate),
+      validUntil: parseDate(r.endDate),
+      method: "AI",
+      sourceDealId: deal.id,
+      sourceDocumentId: deal.documentId,
+      ownerId: actorId,
     });
   }
+  await prisma.$transaction([
+    prisma.masterProduct.deleteMany({ where: { sourceDealId: deal.id, method: "AI" } }),
+    prisma.masterProduct.createMany({ data }),
+  ]);
   return { imported: rich.length, alreadyImported: false };
 }

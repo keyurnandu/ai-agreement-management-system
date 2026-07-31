@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { recordAudit } from "@/lib/audit";
 import { roleAtLeast } from "@/lib/rbac";
-import { normalizeLineItems, lineItemsTotal } from "@/lib/master-data";
+import { normalizeLineItems, lineItemTotals } from "@/lib/master-data";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +19,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const c = await loadContract(id);
   if (!c) return NextResponse.json({ error: "not found" }, { status: 404 });
   const items = normalizeLineItems(c.lineItems);
-  return NextResponse.json({ items, ...lineItemsTotal(items), canEdit: roleAtLeast(session.user.role, "EDITOR") || c.createdById === session.user.id });
+  return NextResponse.json({ items, totals: lineItemTotals(items), canEdit: roleAtLeast(session.user.role, "EDITOR") || c.createdById === session.user.id });
 }
 
 /** Replace the contract's line items (the sales product picker saves the whole list). */
@@ -46,5 +46,5 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     resourceId: id,
     metadata: { count: items.length },
   });
-  return NextResponse.json({ items, ...lineItemsTotal(items) });
+  return NextResponse.json({ items, totals: lineItemTotals(items) });
 }

@@ -113,11 +113,14 @@ export function ContractLineItems({ contractId }: { contractId: string }) {
     }
   }
 
-  const { total, currency } = useMemo(() => {
-    const list = items ?? [];
-    const cur = list.find((i) => i.currency)?.currency ?? "USD";
-    const t = list.reduce((s, i) => s + (i.unitPrice ?? 0) * (i.quantity || 1), 0);
-    return { total: t, currency: cur };
+  // Subtotal per currency — never sum across different currencies.
+  const totals = useMemo(() => {
+    const byCur = new Map<string, number>();
+    for (const i of items ?? []) {
+      const cur = (i.currency || "USD").toUpperCase();
+      byCur.set(cur, (byCur.get(cur) ?? 0) + (i.unitPrice ?? 0) * (i.quantity || 1));
+    }
+    return [...byCur.entries()].map(([currency, total]) => ({ currency, total }));
   }, [items]);
 
   const catalogFiltered = useMemo(() => {
@@ -202,11 +205,15 @@ export function ContractLineItems({ contractId }: { contractId: string }) {
                 </tr>
               );
             })}
-            <tr>
-              <td colSpan={4} style={{ textAlign: "right", fontWeight: 700 }}>Total</td>
-              <td style={{ fontWeight: 700 }}>{money(total, currency)}</td>
-              {canEdit ? <td /> : null}
-            </tr>
+            {totals.map((t) => (
+              <tr key={t.currency}>
+                <td colSpan={4} style={{ textAlign: "right", fontWeight: 700 }}>
+                  Total{totals.length > 1 ? ` (${t.currency})` : ""}
+                </td>
+                <td style={{ fontWeight: 700 }}>{money(t.total, t.currency)}</td>
+                {canEdit ? <td /> : null}
+              </tr>
+            ))}
           </tbody>
         </table>
       )}

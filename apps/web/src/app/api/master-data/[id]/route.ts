@@ -17,7 +17,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const existing = await prisma.masterProduct.findUnique({ where: { id }, select: { id: true } });
   if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const body = (await req.json()) as MasterProductInput;
+  const body = (await req.json().catch(() => ({}))) as MasterProductInput;
   const product = await updateProduct(id, body);
   await recordAudit({
     action: "masterdata.product.update",

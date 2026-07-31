@@ -65,33 +65,31 @@ function money(amount: number, currency = "USD"): string {
   try {
     return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
   } catch {
-    return `${currency} ${amount.toFixed(2)}`;
+    // Fallback currency may be a non-ISO code — escape it before it reaches HTML.
+    return `${escapeHtml(currency)} ${amount.toFixed(2)}`;
   }
 }
 
-/** Render selected catalog products as a numbered "Products & Pricing" section. */
+/** Render selected catalog products as a numbered "Products & Pricing" section.
+ * Totals are subtotaled per currency (never summed across currencies). */
 export function composeLineItemsHtml(items: ContractLineItem[], order: number): string {
   if (!items?.length) return "";
-  const currency = items.find((i) => i.currency)?.currency ?? "USD";
-  let total = 0;
-  let hasPricing = false;
+  const byCurrency = new Map<string, number>();
   const rows = items
     .map((i, idx) => {
       const qty = i.quantity || 1;
       const unit = i.unitPrice ?? null;
+      const cur = (i.currency || "USD").toUpperCase();
       const ext = unit != null ? unit * qty : null;
-      if (ext != null) {
-        total += ext;
-        hasPricing = true;
-      }
+      if (ext != null) byCurrency.set(cur, (byCurrency.get(cur) ?? 0) + ext);
       const desc = i.description ? `<br/><span style="color:#666">${escapeHtml(i.description)}</span>` : "";
-      return `<tr><td>${idx + 1}</td><td>${escapeHtml(i.sku ?? "")}</td><td>${escapeHtml(i.name)}${desc}</td><td>${qty}</td><td>${unit != null ? money(unit, currency) : "—"}</td><td>${ext != null ? money(ext, currency) : "—"}</td></tr>`;
+      return `<tr><td>${idx + 1}</td><td>${escapeHtml(i.sku ?? "")}</td><td>${escapeHtml(i.name)}${desc}</td><td>${qty}</td><td>${unit != null ? money(unit, cur) : "—"}</td><td>${ext != null ? money(ext, cur) : "—"}</td></tr>`;
     })
     .join("");
-  const totalRow = hasPricing
-    ? `<tr><td colspan="5" style="text-align:right;font-weight:700">Total</td><td style="font-weight:700">${money(total, currency)}</td></tr>`
-    : "";
-  return `<section class="clause"><div class="clause-title">${order}. Products &amp; Pricing</div><table class="clause-table"><thead><tr><th>#</th><th>SKU</th><th>Product</th><th>Qty</th><th>Unit Price</th><th>Extended</th></tr></thead><tbody>${rows}${totalRow}</tbody></table></section>`;
+  const totalRows = [...byCurrency.entries()]
+    .map(([cur, total]) => `<tr><td colspan="5" style="text-align:right;font-weight:700">Total (${escapeHtml(cur)})</td><td style="font-weight:700">${money(total, cur)}</td></tr>`)
+    .join("");
+  return `<section class="clause"><div class="clause-title">${order}. Products &amp; Pricing</div><table class="clause-table"><thead><tr><th>#</th><th>SKU</th><th>Product</th><th>Qty</th><th>Unit Price</th><th>Extended</th></tr></thead><tbody>${rows}${totalRows}</tbody></table></section>`;
 }
 
 /** Structured HTML for consistent contract PDF rendering. */

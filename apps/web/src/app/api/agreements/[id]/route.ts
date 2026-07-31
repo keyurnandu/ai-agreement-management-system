@@ -50,7 +50,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       routingOrder: r.routingOrder,
       status: r.status,
       signedAt: r.signedAt,
-      token: r.accessToken, // owner view → expose so links can be shared
+      // Owner view → expose the sign link only where it's still usable: real
+      // signers/approvers who haven't signed. CC and already-signed recipients
+      // don't get a distributable token.
+      token: r.role !== "CC" && r.status !== "SIGNED" ? r.accessToken : null,
     })),
     fields: ag.fields.map((f) => ({
       id: f.id,

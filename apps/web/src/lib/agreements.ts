@@ -146,6 +146,9 @@ export async function maybeFinalizeAgreement(agreementId: string): Promise<boole
     include: { recipients: true, fields: true },
   });
   if (!ag) return false;
+  // Already finalized — don't stamp a second signed version or re-emit
+  // completion side-effects (guards double-submit / re-entry after completion).
+  if (ag.status === "COMPLETED") return true;
 
   const signers = ag.recipients.filter((r) => r.role === "SIGNER" || r.role === "APPROVER");
   const allSigned = signers.length > 0 && signers.every((r) => r.status === "SIGNED");

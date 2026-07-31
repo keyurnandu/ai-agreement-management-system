@@ -328,7 +328,8 @@ export async function executeAssistantAction(
     if (!type) return { reply: "Couldn't find the deal type to create.", tool };
     const commercialId = await allocateCommercialId(type.prefix);
     const documentId = await createPlaceholderDocument(title, actor.id, "Created by assistant");
-    const vendorEmail = counterparty ? `legal@${counterparty.toLowerCase().replace(/[^a-z0-9]+/g, "")}.example` : "counterparty@example.com";
+    const slug = counterparty.toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const vendorEmail = slug ? `legal@${slug}.example` : "counterparty@example.com";
     const deal = await prisma.deal.create({
       data: {
         commercialId,

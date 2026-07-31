@@ -44,7 +44,7 @@ export async function POST(req: Request) {
   const owner = await prisma.user.findUnique({ where: { id: session.user.id }, select: { id: true } });
   if (!owner) return NextResponse.json({ error: "Your session is out of date — please sign out and sign in again." }, { status: 401 });
 
-  const body = (await req.json()) as MasterProductInput;
+  const body = (await req.json().catch(() => ({}))) as MasterProductInput;
   if (!body.name?.trim()) return NextResponse.json({ error: "Product name is required." }, { status: 400 });
 
   const product = await createProduct(body, session.user.id);
