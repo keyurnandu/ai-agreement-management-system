@@ -80,6 +80,33 @@ export function AttributesPanel({
     await load();
   }
 
+  // "View source": highlight directly on the rendered PDF. If the stored source
+  // has no bounding box (older/manual extractions), locate it on the page now so
+  // the highlight lands on the contract instead of the extracted-text view.
+  async function viewSource(a: Attr) {
+    const src = a.source;
+    if (!src) return;
+    if (!src.rect && !src.formField) {
+      try {
+        const r = await fetch(`/api/documents/${documentId}/locate`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ query: a.value ?? src.snippet, page: src.page }),
+        });
+        if (r.ok) {
+          const j = (await r.json()) as { page?: number; rect?: { x: number; y: number; w: number; h: number } | null };
+          if (j.rect) {
+            setHighlight({ key: a.key, ...src, page: j.page ?? src.page, rect: j.rect });
+            return;
+          }
+        }
+      } catch {
+        /* fall through to the text-view highlight */
+      }
+    }
+    setHighlight({ key: a.key, ...src });
+  }
+
   function toggleVisibleKey(key: string) {
     if (!attrs) return;
     setVisibleKeys((prev) => {
@@ -322,10 +349,10 @@ export function AttributesPanel({
                       type="button"
                       className="source-link"
                       title={a.source.snippet}
-                      onClick={() => setHighlight({ key: a.key, ...a.source! })}
+                      onClick={() => void viewSource(a)}
                     >
                       <span className="pill" style={{ marginTop: 6, fontSize: 11, color: "var(--amber)" }}>
-                        p{a.source.page} · {a.source.rect ? "view on PDF" : a.source.formField ? "view form field" : "view source"}
+                        p{a.source.page} · {a.source.formField ? "view form field" : "view on PDF"}
                       </span>
                     </button>
                   ) : a.value && a.value !== "N/A" ? (
