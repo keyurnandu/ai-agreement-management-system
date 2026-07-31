@@ -45,6 +45,7 @@ function DocNode({
   isAdmin,
   selected,
   onToggle,
+  collections,
 }: {
   node: HierarchyNode<TreeRow>;
   depth: number;
@@ -52,9 +53,22 @@ function DocNode({
   isAdmin: boolean;
   selected: Set<string>;
   onToggle: (id: string) => void;
+  collections: { id: string; title: string }[];
 }) {
   const isCollection = node.kind === "COLLECTION";
   const checked = selected.has(node.id);
+
+  async function move(target: string) {
+    const collectionParentId = target === "__top__" ? null : target;
+    if (collectionParentId === node.collectionParentId) return;
+    const r = await fetch(`/api/documents/${node.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ collectionParentId }),
+    });
+    if (r.ok) onRefresh();
+    else alert(((await r.json().catch(() => ({}))) as { error?: string }).error ?? "Move failed");
+  }
 
   return (
     <CollapsibleHierarchyNode
@@ -110,6 +124,25 @@ function DocNode({
               + PDF
             </Link>
           ) : null}
+          {collections.length > 0 ? (
+            <select
+              className="input"
+              aria-label={`Move ${node.title} to a collection`}
+              title="Move to collection"
+              value={node.collectionParentId ?? "__top__"}
+              onChange={(e) => void move(e.target.value)}
+              style={{ width: "auto", padding: "4px 8px", fontSize: 12 }}
+            >
+              <option value="__top__">Top level</option>
+              {collections
+                .filter((c) => c.id !== node.id)
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    → {c.title}
+                  </option>
+                ))}
+            </select>
+          ) : null}
           <RemoveButton
             label="Delete"
             confirmMessage={`Delete "${node.title}"? Linked deals or agreements must be removed first.`}
@@ -133,6 +166,7 @@ function DocNode({
           isAdmin={isAdmin}
           selected={selected}
           onToggle={onToggle}
+          collections={collections}
         />
       ))}
     </CollapsibleHierarchyNode>
@@ -178,6 +212,10 @@ export function DocumentsHierarchy({
   const someSelected = allIds.some((id) => selected.has(id));
 
   const tree = useMemo(() => buildHierarchy(docs.map((d) => ({ ...d, parentId: d.collectionParentId }))), [docs]);
+  const collections = useMemo(
+    () => docs.filter((d) => d.kind === "COLLECTION").map((d) => ({ id: d.id, title: d.title })),
+    [docs],
+  );
 
   function toggleOne(id: string) {
     setSelected((prev) => {
@@ -289,6 +327,7 @@ export function DocumentsHierarchy({
           isAdmin={isAdmin}
           selected={selected}
           onToggle={toggleOne}
+          collections={collections}
         />
       ))}
     </div>
