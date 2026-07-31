@@ -101,6 +101,7 @@ export default async function DealPage({
         documentId={canViewDoc ? documentId : null}
         documentTitle={documentTitle}
         canEditAttributes={canEdit}
+        chatDealId={id}
         main={
           <div className="deal-page-stack">
             <PublishContractPdfButton

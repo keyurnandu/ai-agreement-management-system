@@ -27,6 +27,8 @@ type Props = {
   canEditAttributes: boolean;
   /** Hide attributes sidebar (e.g. deal workflow — use Agreements → extraction instead). */
   showAttributes?: boolean;
+  /** When set, "Ask AI" chats about the deal (status/issues/compliance + document). */
+  chatDealId?: string;
   main: ReactNode;
   below?: ReactNode;
 };
@@ -44,6 +46,7 @@ export function RecordWorkspace({
   documentTitle,
   canEditAttributes,
   showAttributes = true,
+  chatDealId,
   main,
   below,
 }: Props) {
@@ -91,7 +94,7 @@ export function RecordWorkspace({
             ) : null}
           </div>
           <div className="record-header-actions">
-            {documentId ? (
+            {documentId || chatDealId ? (
               <button
                 type="button"
                 className={askOpen ? "btn" : "btn secondary"}
@@ -113,12 +116,14 @@ export function RecordWorkspace({
             {below}
           </div>
 
-          {documentId ? (
+          {documentId || chatDealId ? (
             <ChatPanel
-              documentId={documentId}
-              title={documentTitle ?? title}
+              documentId={documentId ?? ""}
+              title={chatDealId ? title : documentTitle ?? title}
               open={askOpen}
               onClose={() => setAskOpen(false)}
+              scope={chatDealId ? "deal" : "document"}
+              askUrl={chatDealId ? `/api/deals/${chatDealId}/ask` : undefined}
             />
           ) : null}
 

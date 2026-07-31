@@ -23,6 +23,18 @@ const COLLECTION_SUGGESTIONS = [
   "Which of these auto-renews?",
   "What governing law do these use?",
 ];
+const DEAL_SUGGESTIONS = [
+  "What's blocking this deal?",
+  "What's the status and next step?",
+  "What compliance issues are open?",
+  "What is our liability exposure?",
+];
+
+function suggestionsFor(scope: string) {
+  if (scope === "collection") return COLLECTION_SUGGESTIONS;
+  if (scope === "deal") return DEAL_SUGGESTIONS;
+  return DOC_SUGGESTIONS;
+}
 
 export function ChatPanel({
   documentId,
@@ -30,12 +42,14 @@ export function ChatPanel({
   open,
   onClose,
   scope = "document",
+  askUrl,
 }: {
   documentId: string;
   title: string;
   open: boolean;
   onClose: () => void;
-  scope?: "document" | "collection";
+  scope?: "document" | "collection" | "deal";
+  askUrl?: string;
 }) {
   const highlight = useOptionalAttributeHighlight();
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -54,7 +68,7 @@ export function ChatPanel({
     setMessages((m) => [...m, { role: "user", text: q }]);
     setBusy(true);
     try {
-      const r = await fetch(`/api/documents/${documentId}/ask`, {
+      const r = await fetch(askUrl ?? `/api/documents/${documentId}/ask`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ question: q }),
@@ -117,10 +131,12 @@ export function ChatPanel({
                 <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
                   {scope === "collection"
                     ? "Ask across every document in this collection. Each answer cites the source document — click it to open."
-                    : "Ask anything about this document. Answers cite the source — click a citation to jump to it on the PDF."}
+                    : scope === "deal"
+                      ? "Ask about this deal — status, blockers, compliance, or the contract itself. Answers cite the source."
+                      : "Ask anything about this document. Answers cite the source — click a citation to jump to it on the PDF."}
                 </p>
                 <div className="chat-suggest">
-                  {(scope === "collection" ? COLLECTION_SUGGESTIONS : DOC_SUGGESTIONS).map((s) => (
+                  {suggestionsFor(scope).map((s) => (
                     <button key={s} type="button" className="chat-chip" onClick={() => void send(s)}>
                       {s}
                     </button>
