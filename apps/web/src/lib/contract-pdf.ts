@@ -3,6 +3,7 @@ import { storage } from "@/lib/adapters/storage";
 import { pdfEngine } from "@/lib/services/client";
 import { documentStorageKey } from "@/lib/documents";
 import { composeContractHtml, CONTRACT_DOCUMENT_CSS } from "@/lib/authoring";
+import { normalizeLineItems } from "@/lib/master-data";
 import { applyOrgBrandingToPdf } from "@/lib/org-branding";
 import { computeVersionDiff, saveDealDiff, saveClauseChangeDiff } from "@/lib/document-diff";
 import type { VersionDiff } from "@/lib/document-diff";
@@ -22,7 +23,8 @@ export async function publishContractAsPdf(opts: {
   });
   if (!c) throw new Error("contract not found");
 
-  const html = composeContractHtml(c.title, c.clauses);
+  const lineItems = normalizeLineItems(c.lineItems);
+  const html = composeContractHtml(c.title, c.clauses, lineItems);
   const { pdf: rawPdf } = await pdfEngine.contractDocument(html, CONTRACT_DOCUMENT_CSS.trim());
   const branded = await applyOrgBrandingToPdf(rawPdf, `${c.title}.pdf`);
   const pdf = branded.pdf;

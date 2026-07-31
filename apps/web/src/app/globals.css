@@ -2323,6 +2323,84 @@ button.source-link:hover .pill {
   transition: width 0.3s ease;
 }
 
+/* ── Master data (product catalog) ─────────────────────── */
+.md-table-card { padding: 0; overflow: hidden; }
+.md-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.md-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.md-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.md-table tbody tr:last-child td { border-bottom: none; }
+.md-table tbody tr:hover { background: var(--panel-2); }
+.md-table .mono, .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+.md-actions { white-space: nowrap; text-align: right; }
+.md-actions .btn { padding: 3px 10px; font-size: 12px; margin-left: 6px; }
+.md-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--panel-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.md-badge.ai { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.md-source-link { margin-left: 6px; color: var(--accent); font-size: 12px; }
+.md-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+}
+.md-field { display: flex; flex-direction: column; gap: 4px; }
+.md-field > span { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.md-col-2 { grid-column: 1 / -1; }
+@media (max-width: 640px) { .md-form-grid { grid-template-columns: 1fr; } }
+/* Catalog picker (modal) */
+.md-picker {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 61;
+  width: min(560px, 92vw);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.md-picker-list { display: flex; flex-direction: column; gap: 6px; }
+.md-picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.md-picker-row:hover { background: var(--panel-2); border-color: var(--accent); }
+
 /* ── Documents / collections tree ──────────────────────── */
 .hierarchy-row {
   display: flex;

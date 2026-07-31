@@ -243,6 +243,7 @@ model Contract {
   templateId  String?
   template    Template? @relation(fields: [templateId], references: [id])
   variables   Json?
+  lineItems   Json? // sales: [{ productId?, sku, name, description, quantity, unitPrice, currency }] picked from master data
   documentId  String? // rendered Document.id (no FK; Document model untouched)
   dealId      String?   @unique // linked deal workflow record (same commercialId)
   createdById String?
@@ -451,6 +452,37 @@ model Deal {
   @@index([parentDealId])
   @@index([recordType])
   @@index([commercialTypeId])
+}
+
+// ── Master data (product catalog) ─────────────────────────────────────────────
+// One row per product. `side` splits the two catalogs:
+//   SALES       — what we sell; entered by sales (or extracted from a price list),
+//                 and picked into sales contracts as line items.
+//   PROCUREMENT — what we buy; auto-extracted from a signed procurement agreement,
+//                 then editable to correct extraction mistakes.
+model MasterProduct {
+  id           String  @id @default(cuid())
+  side         String  @default("SALES") // SALES | PROCUREMENT
+  name         String
+  sku          String?
+  manufacturer String? // manufacturer / organization the product is dealt with
+  family       String? // product family
+  unitPrice    Float?
+  currency     String  @default("USD")
+  pricingNotes String? // family / tiered pricing detail
+  validFrom    DateTime?
+  validUntil   DateTime? // validity — important for both catalogs
+  status       String  @default("ACTIVE") // ACTIVE | ARCHIVED
+  method       String  @default("MANUAL") // MANUAL | AI (provenance of the row)
+  sourceDocumentId String? // Document.id the value was extracted from (no FK, mirrors AttributeValue)
+  sourceDealId     String? // procurement: the signed Deal it came from (no FK)
+  ownerId      String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([side])
+  @@index([sku])
+  @@index([sourceDealId])
 }
 
 model ReviewIssue {

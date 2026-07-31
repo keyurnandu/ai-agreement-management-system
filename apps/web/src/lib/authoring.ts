@@ -52,21 +52,66 @@ export function slugifyClauseKey(title: string): string {
   return base || `clause-${Date.now()}`;
 }
 
+export type ContractLineItem = {
+  sku?: string | null;
+  name: string;
+  description?: string | null;
+  quantity: number;
+  unitPrice?: number | null;
+  currency?: string | null;
+};
+
+function money(amount: number, currency = "USD"): string {
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
+  } catch {
+    return `${currency} ${amount.toFixed(2)}`;
+  }
+}
+
+/** Render selected catalog products as a numbered "Products & Pricing" section. */
+export function composeLineItemsHtml(items: ContractLineItem[], order: number): string {
+  if (!items?.length) return "";
+  const currency = items.find((i) => i.currency)?.currency ?? "USD";
+  let total = 0;
+  let hasPricing = false;
+  const rows = items
+    .map((i, idx) => {
+      const qty = i.quantity || 1;
+      const unit = i.unitPrice ?? null;
+      const ext = unit != null ? unit * qty : null;
+      if (ext != null) {
+        total += ext;
+        hasPricing = true;
+      }
+      const desc = i.description ? `<br/><span style="color:#666">${escapeHtml(i.description)}</span>` : "";
+      return `<tr><td>${idx + 1}</td><td>${escapeHtml(i.sku ?? "")}</td><td>${escapeHtml(i.name)}${desc}</td><td>${qty}</td><td>${unit != null ? money(unit, currency) : "—"}</td><td>${ext != null ? money(ext, currency) : "—"}</td></tr>`;
+    })
+    .join("");
+  const totalRow = hasPricing
+    ? `<tr><td colspan="5" style="text-align:right;font-weight:700">Total</td><td style="font-weight:700">${money(total, currency)}</td></tr>`
+    : "";
+  return `<section class="clause"><div class="clause-title">${order}. Products &amp; Pricing</div><table class="clause-table"><thead><tr><th>#</th><th>SKU</th><th>Product</th><th>Qty</th><th>Unit Price</th><th>Extended</th></tr></thead><tbody>${rows}${totalRow}</tbody></table></section>`;
+}
+
 /** Structured HTML for consistent contract PDF rendering. */
 export function composeContractHtml(
   title: string,
   clauses: { order: number; title: string; body: string }[],
+  lineItems?: ContractLineItem[],
 ): string {
-  const sections = [...clauses]
-    .sort((a, b) => a.order - b.order)
+  const sortedClauses = [...clauses].sort((a, b) => a.order - b.order);
+  const sections = sortedClauses
     .map((c) => {
       const clauseTitle = escapeHtml(normalizeClauseTitle(c.title));
       const body = formatClauseBodyToHtml(c.body);
       return `<section class="clause"><div class="clause-title">${c.order}. ${clauseTitle}</div><div class="clause-body">${body}</div></section>`;
     })
     .join("\n");
+  const nextOrder = (sortedClauses[sortedClauses.length - 1]?.order ?? sortedClauses.length) + 1;
+  const products = lineItems?.length ? composeLineItemsHtml(lineItems, nextOrder) : "";
   const docTitle = escapeHtml(normalizeClauseTitle(title));
-  return `<html><body><h1 class="doc-title">${docTitle}</h1>${sections}</body></html>`;
+  return `<html><body><h1 class="doc-title">${docTitle}</h1>${sections}${products}</body></html>`;
 }
 
 /** Greedy word-wrap so the simple text renderer doesn't run off the page width. */

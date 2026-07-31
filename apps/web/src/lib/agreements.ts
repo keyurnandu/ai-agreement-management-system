@@ -5,6 +5,7 @@ import { pdfEngine, type StampItem } from "@/lib/services/client";
 import { recordAudit } from "@/lib/audit";
 import { emitEvent } from "@/lib/webhooks";
 import { canAccessDocument, documentStorageKey, latestVersion, loadVersionBytes } from "@/lib/documents";
+import { importProcurementProductsFromDeal } from "@/lib/master-data";
 import type { Actor } from "@/lib/rbac";
 
 export const FIELD_TYPES = ["SIGNATURE", "INITIAL", "DATE", "TEXT", "CHECKBOX"];
@@ -207,6 +208,19 @@ export async function maybeFinalizeAgreement(agreementId: string): Promise<boole
   const linkedDeal = await prisma.deal.findFirst({ where: { agreementId } });
   if (linkedDeal && linkedDeal.status === "SIGNING") {
     await prisma.deal.update({ where: { id: linkedDeal.id }, data: { status: "COMPLETED" } });
+  }
+
+  // Procurement: capture the signed agreement's product-level details into the
+  // master-data catalog (editable afterward). Best-effort — never blocks signing.
+  if (linkedDeal && linkedDeal.direction === "ORG_BUYING") {
+    try {
+      await importProcurementProductsFromDeal(
+        { id: linkedDeal.id, documentId: linkedDeal.documentId, vendorName: linkedDeal.vendorName, direction: linkedDeal.direction },
+        linkedDeal.ownerId,
+      );
+    } catch {
+      /* extraction unavailable — leave the catalog untouched */
+    }
   }
 
   await recordAudit({

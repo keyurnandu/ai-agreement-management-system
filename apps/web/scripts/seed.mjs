@@ -6,6 +6,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CLAUSE_LIBRARY, TEMPLATES, ATTRIBUTES, SHARED_VARS } from "./seed-data/commercial-clauses.mjs";
 import { DEMO_GUIDE, PORTAL, SALES_TABLE_PRIMARY, SALES_TABLE_EXPANSION, PROC_TABLE_PRIMARY, portalUrl } from "./seed-data/demo-flows.mjs";
+import { seedMasterProducts } from "./seed-data/sample-master-products.mjs";
 import {
   SALES_CHECKS_TITLE,
   SALES_CHECKS_LINES,
@@ -1168,6 +1169,7 @@ async function main() {
   if (managerId) await seedCompliancePacks(managerId);
   if (managerId) await seedFileTemplates(managerId);
   if (managerId) await seedDemo(managerId);
+  if (managerId) await seedMasterProducts(prisma, managerId);
   await backfillDemoLinks();
   await repairDocumentFiles();
   await normalizeExistingClauses();

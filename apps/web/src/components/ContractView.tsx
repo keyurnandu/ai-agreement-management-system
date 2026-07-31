@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ClauseBody } from "@/components/ClauseBody";
+import { ContractLineItems } from "@/components/ContractLineItems";
 import { slugifyClauseKey } from "@/lib/authoring";
 
 type Clause = {
@@ -419,6 +420,8 @@ export function ContractClauses({ contractId, embedded }: { contractId: string; 
           </div>
         ))}
       </div>
+
+      <ContractLineItems contractId={contractId} />
     </>
   );
 }
