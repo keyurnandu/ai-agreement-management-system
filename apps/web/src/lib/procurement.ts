@@ -4,6 +4,7 @@ import { storage } from "@/lib/adapters/storage";
 import { pdfEngine, intelligence } from "@/lib/services/client";
 import { documentStorageKey, latestVersion, loadVersionBytes } from "@/lib/documents";
 import { applyOrgBrandingToPdf } from "@/lib/org-branding";
+import { parseRulePack, evaluateCompliance } from "@/lib/compliance-rules";
 import { roleAtLeast, type Actor } from "@/lib/rbac";
 
 export { getOrgSettings } from "@/lib/org-branding";
@@ -175,29 +176,53 @@ export async function runComplianceCheck(dealId: string, actorId: string) {
   const text = await getDealDocumentText(deal.documentId);
   if (!text) throw new Error("document has no text");
 
-  const standards = rulesText
-    .split(/\n+/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 10)
-    .slice(0, 30)
-    .map((line, i) => ({ title: `Rule ${i + 1}`, text: line }));
-
-  const { findings } = await intelligence.redline(text, standards);
   const issues = [];
-  for (const f of findings ?? []) {
-    const status = String(f.status ?? "").toUpperCase();
-    if (status === "PRESENT" || status === "MATCH") continue;
-    const issue = await prisma.reviewIssue.create({
-      data: {
-        dealId,
-        severity: status === "MISSING" ? "HIGH" : "MEDIUM",
-        title: String(f.clause ?? "Compliance finding"),
-        description: [f.note, f.suggestion].filter(Boolean).join(" — ") || "Review required",
-        raisedBySide: "SYSTEM",
-        raisedById: actorId,
-      },
-    });
-    issues.push(issue);
+
+  // Preferred path: structured, deterministic rules (explainable + repeatable).
+  const pack = parseRulePack(rulesText);
+  if (pack) {
+    // Clear prior system-raised compliance issues so re-runs don't pile up duplicates.
+    await prisma.reviewIssue.deleteMany({ where: { dealId, raisedBySide: "SYSTEM", status: "OPEN" } });
+    const findings = evaluateCompliance(text, pack.rules);
+    for (const f of findings) {
+      if (f.status === "PASS") continue;
+      const issue = await prisma.reviewIssue.create({
+        data: {
+          dealId,
+          severity: f.severity,
+          title: f.status === "MISSING" ? `Missing: ${f.title}` : `Non-standard: ${f.title}`,
+          description: f.detail,
+          raisedBySide: "SYSTEM",
+          raisedById: actorId,
+        },
+      });
+      issues.push(issue);
+    }
+  } else {
+    // Legacy path: free-text rules evaluated by the AI redline service.
+    const standards = rulesText
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 10)
+      .slice(0, 30)
+      .map((line, i) => ({ title: `Rule ${i + 1}`, text: line }));
+
+    const { findings } = await intelligence.redline(text, standards);
+    for (const f of findings ?? []) {
+      const status = String(f.status ?? "").toUpperCase();
+      if (status === "PRESENT" || status === "MATCH") continue;
+      const issue = await prisma.reviewIssue.create({
+        data: {
+          dealId,
+          severity: status === "MISSING" ? "HIGH" : "MEDIUM",
+          title: String(f.clause ?? "Compliance finding"),
+          description: [f.note, f.suggestion].filter(Boolean).join(" — ") || "Review required",
+          raisedBySide: "SYSTEM",
+          raisedById: actorId,
+        },
+      });
+      issues.push(issue);
+    }
   }
 
   await prisma.deal.update({

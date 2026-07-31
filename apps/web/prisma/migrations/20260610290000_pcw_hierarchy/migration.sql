@@ -19,6 +19,15 @@ VALUES
   ('ctype_cpcw', 'cpcw', 'Contract PCW', 'CPCW', 'ORG_BUYING', 'CONTRACT', false, 'Structured PCW under CPMCW', true, 12, true),
   ('ctype_cscw', 'cscw', 'Contract SCW', 'CSCW', 'ORG_SELLING', 'CONTRACT', false, 'Structured SCW under CSMCW', true, 12, true);
 
+-- Amendment types (referenced by the links below). Created here so a cold
+-- migration apply has valid FK targets; the seed also upserts these.
+INSERT OR IGNORE INTO "CommercialRecordType" ("id", "key", "name", "prefix", "direction", "domain", "isRoot", "description", "system", "sortOrder", "active")
+VALUES
+  ('ctype_sam', 'sam', 'Sales Amendment', 'SAM', 'ORG_SELLING', 'DEAL', false, 'Amendment under a sales master or SCW', true, 5, true),
+  ('ctype_pam', 'pam', 'Procurement Amendment', 'PAM', 'ORG_BUYING', 'DEAL', false, 'Amendment under a procurement master or PCW', true, 6, true),
+  ('ctype_csam', 'csam', 'Contract Sales Amendment', 'CSAM', 'ORG_SELLING', 'CONTRACT', false, 'Structured sales amendment', true, 14, true),
+  ('ctype_cpam', 'cpam', 'Contract Procurement Amendment', 'CPAM', 'ORG_BUYING', 'CONTRACT', false, 'Structured procurement amendment', true, 15, true);
+
 -- Remove direct master → order links
 DELETE FROM "CommercialTypeLink" WHERE "id" IN ('link_pmcw_por', 'link_smcw_sor', 'link_cpmcw_cpor', 'link_csmcw_csor');
 

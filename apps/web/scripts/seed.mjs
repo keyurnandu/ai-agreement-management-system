@@ -721,13 +721,30 @@ function printDemoFlowGuide() {
   console.log("Re-run: cd apps/web && npm run db:seed\n");
 }
 
+/** Realistic vendor SaaS "paper" — intentionally has some required terms and
+ *  omits others, so the Adobe procurement compliance check flags real gaps. */
+function vendorPaperLines(vendor) {
+  return [
+    `This Master Subscription Agreement ("Agreement") is entered into between ${vendor} ("Provider") and Adobe Inc. ("Customer").`,
+    "",
+    "1. SERVICES. Provider will make its cloud software available to Customer on a subscription basis during the Term.",
+    "2. FEES & PAYMENT. Customer shall pay all undisputed fees within forty-five (45) days of the invoice date.",
+    "3. TERM & RENEWAL. This Agreement begins on the Effective Date and will automatically renew for successive twelve (12) month periods unless either party gives ninety (90) days written non-renewal notice.",
+    "4. LIMITATION OF LIABILITY. Provider's aggregate liability shall not exceed the fees paid by Customer in the one (1) month preceding the event giving rise to the claim.",
+    "5. CONFIDENTIALITY. Each party shall protect the other's Confidential Information using at least reasonable care.",
+    "6. GOVERNING LAW. This Agreement is governed by the laws of the State of California, without regard to conflicts of law.",
+    "7. WARRANTIES. The services are provided \"AS IS\" without warranty of any kind, express or implied.",
+    "8. TERMINATION. Either party may terminate this Agreement for material breach not cured within thirty (30) days after written notice.",
+  ];
+}
+
 async function seedDemo(userId) {
   console.log("Seeding sales & procurement demo flows (upsert):");
 
   const salesVars = {
     ...SHARED_VARS,
-    customer: "Acme Industries, Inc.",
-    customer_address: "100 Enterprise Way, Austin, TX 78701",
+    customer: "Microsoft Corporation",
+    customer_address: "One Microsoft Way, Redmond, WA 98052",
     effective_date: "2026-01-15",
     master_reference: "Master Customer Agreement dated January 15, 2026",
   };
@@ -760,7 +777,7 @@ async function seedDemo(userId) {
     ...SHARED_VARS,
     provider: "Anthropic Technologies, LLC",
     provider_address: "548 Market Street, PMB 90375, San Francisco, CA 94104",
-    customer: "Demo Corp Inc.",
+    customer: "Adobe Inc.",
     customer_address: SHARED_VARS.provider_address,
     effective_date: "2026-02-01",
     master_reference: "Master Vendor Agreement dated February 1, 2026",
@@ -783,7 +800,7 @@ async function seedDemo(userId) {
     typeId: "ctype_csmcw",
     commercialId: "SMCW-1",
     prefix: "SMCW",
-    title: "Master Customer Agreement — Acme Industries",
+    title: "Master Customer Agreement — Microsoft",
     parentId: null,
     vars: salesVars,
     userId,
@@ -793,7 +810,7 @@ async function seedDemo(userId) {
     typeId: "ctype_cscw",
     commercialId: "SCW-1",
     prefix: "SCW",
-    title: "Framework Customer Contract — Acme 2026",
+    title: "Framework Customer Contract — Microsoft 2026",
     parentId: csmcw.id,
     vars: salesVars,
     userId,
@@ -803,7 +820,7 @@ async function seedDemo(userId) {
     typeId: "ctype_csor",
     commercialId: "SOR-1",
     prefix: "SOR",
-    title: "Order Form Q1 2026 — Acme Enterprise",
+    title: "Order Form Q1 2026 — Microsoft Enterprise",
     parentId: cscw.id,
     vars: salesOrderVars,
     userId,
@@ -814,7 +831,7 @@ async function seedDemo(userId) {
     commercialId: "SOR-2",
     prefix: "SOR",
     reserveNum: 2,
-    title: "Order Form Q2 2026 — Acme seat expansion",
+    title: "Order Form Q2 2026 — Microsoft seat expansion",
     parentId: cscw.id,
     vars: salesOrderVars2,
     userId,
@@ -862,11 +879,11 @@ async function seedDemo(userId) {
   });
 
   // ── Documents (one per deal for distinct PDFs) ──
-  const docSmcw = await ensureDealDocument("SMCW-1", "SMCW-1 — Acme Master Agreement", userId, "Sales demo — master");
-  const docScw = await ensureDealDocument("SCW-1", "SCW-1 — Acme Framework 2026", userId, "Sales demo — wrapper");
-  const docSor1 = await ensureDealDocument("SOR-1", "SOR-1 — Acme Enterprise Order Q1", userId, "Sales demo — order table");
-  const docSor2 = await ensureDealDocument("SOR-2", "SOR-2 — Acme seat expansion Q2", userId, "Sales demo — sent to customer");
-  const docSam1 = await ensureDealDocument("SAM-1", "SAM-1 — Acme Amendment 1", userId, "Sales demo — amendment");
+  const docSmcw = await ensureDealDocument("SMCW-1", "SMCW-1 — Microsoft Master Agreement", userId, "Sales demo — master");
+  const docScw = await ensureDealDocument("SCW-1", "SCW-1 — Microsoft Framework 2026", userId, "Sales demo — wrapper");
+  const docSor1 = await ensureDealDocument("SOR-1", "SOR-1 — Microsoft Enterprise Order Q1", userId, "Sales demo — order table");
+  const docSor2 = await ensureDealDocument("SOR-2", "SOR-2 — Microsoft seat expansion Q2", userId, "Sales demo — sent to customer");
+  const docSam1 = await ensureDealDocument("SAM-1", "SAM-1 — Microsoft Amendment 1", userId, "Sales demo — amendment");
   const docPmcw = await ensureDealDocument("PMCW-1", "PMCW-1 — Anthropic Master Vendor Agreement", userId, "Procurement demo — master");
   const docPcw = await ensureDealDocument("PCW-1", "PCW-1 — Anthropic Framework 2026", userId, "Procurement demo — wrapper");
   const docPor1 = await ensureDealDocument("POR-1", "POR-1 — Anthropic API PO 2026-001", userId, "Procurement demo — order table");
@@ -879,14 +896,14 @@ async function seedDemo(userId) {
     commercialId: "SMCW-1",
     commercialTypeId: "ctype_smcw",
     recordType: "MASTER_CONTRACT",
-    title: "Acme Industries — Master Customer Agreement",
+    title: "Microsoft — Master Customer Agreement",
     direction: "ORG_SELLING",
     status: "UNDER_REVIEW",
     documentId: docSmcw,
     contractId: csmcw.id,
     ownerId: userId,
     vendorEmail: "legal@acme-industries.example",
-    vendorName: "Acme Industries, Inc.",
+    vendorName: "Microsoft Corporation",
     vendorAccessToken: PORTAL.smcw1,
     rulePackId: "pack_adobe_sales",
   });
@@ -897,14 +914,14 @@ async function seedDemo(userId) {
     commercialTypeId: "ctype_scw",
     recordType: "MASTER_CONTRACT",
     parentDealId: smcwDeal.id,
-    title: "Acme — Framework Customer Contract 2026",
+    title: "Microsoft — Framework Customer Contract 2026",
     direction: "ORG_SELLING",
     status: "DRAFT",
     documentId: docScw,
     contractId: cscw.id,
     ownerId: userId,
     vendorEmail: "legal@acme-industries.example",
-    vendorName: "Acme Industries, Inc.",
+    vendorName: "Microsoft Corporation",
     vendorAccessToken: PORTAL.scw1,
   });
   await linkDealContract(scwDeal, cscw);
@@ -914,14 +931,14 @@ async function seedDemo(userId) {
     commercialTypeId: "ctype_sor",
     recordType: "ORDER_FORM",
     parentDealId: scwDeal.id,
-    title: "Acme — Enterprise Order Q1 2026 (product table)",
+    title: "Microsoft — Enterprise Order Q1 2026 (product table)",
     direction: "ORG_SELLING",
     status: "DRAFT",
     documentId: docSor1,
     contractId: csor.id,
     ownerId: userId,
     vendorEmail: "legal@acme-industries.example",
-    vendorName: "Acme Industries, Inc.",
+    vendorName: "Microsoft Corporation",
     vendorAccessToken: PORTAL.sor1,
     fileTemplateId: "ftpl_sample_sales_order",
     rulePackId: "pack_adobe_sales",
@@ -933,14 +950,14 @@ async function seedDemo(userId) {
     commercialTypeId: "ctype_sor",
     recordType: "ORDER_FORM",
     parentDealId: scwDeal.id,
-    title: "Acme — Seat expansion Q2 2026 (sent to customer)",
+    title: "Microsoft — Seat expansion Q2 2026 (sent to customer)",
     direction: "ORG_SELLING",
     status: "WITH_VENDOR",
     documentId: docSor2,
     contractId: csor2.id,
     ownerId: userId,
     vendorEmail: "legal@acme-industries.example",
-    vendorName: "Acme Industries, Inc.",
+    vendorName: "Microsoft Corporation",
     vendorAccessToken: PORTAL.sor2,
     sentToVendorAt: new Date("2026-03-15T10:00:00Z"),
   });
@@ -951,14 +968,14 @@ async function seedDemo(userId) {
     commercialTypeId: "ctype_sam",
     recordType: "AMENDMENT",
     parentDealId: smcwDeal.id,
-    title: "Acme — Amendment 1 (seat expansion)",
+    title: "Microsoft — Amendment 1 (seat expansion)",
     direction: "ORG_SELLING",
     status: "DRAFT",
     documentId: docSam1,
     contractId: csam.id,
     ownerId: userId,
     vendorEmail: "legal@acme-industries.example",
-    vendorName: "Acme Industries, Inc.",
+    vendorName: "Microsoft Corporation",
     vendorAccessToken: PORTAL.sam1,
   });
   await linkDealContract(samDeal, csam);
@@ -1081,6 +1098,17 @@ async function seedDemo(userId) {
       raisedBySide: "ORG",
     },
   ]);
+
+  // Attach realistic "vendor paper" to the submitted deals so extraction and the
+  // compliance check have real text to evaluate (simulates the uploaded PDF).
+  for (const { docId, vendor } of [
+    { docId: porDeal3.documentId, vendor: "Slack Technologies, LLC" },
+    { docId: porDeal4.documentId, vendor: "Datadog, Inc." },
+  ]) {
+    if (!docId) continue;
+    const bytes = await renderTextPagePdf(`${vendor} — Master Subscription Agreement`, vendorPaperLines(vendor));
+    if (bytes) await appendDocumentVersion(docId, bytes, `${vendor} — Master Subscription Agreement`, userId, "vendor uploaded paper");
+  }
 
   // Bump ID sequences so user-created records continue after demo IDs
   for (const [prefix, nextVal] of [

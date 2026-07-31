@@ -1,12 +1,12 @@
 /** Enterprise SaaS commercial clauses — master agreement, order form, amendment structure. */
 
 export const SHARED_VARS = {
-  provider: "Demo Corp Inc.",
-  provider_address: "548 Market Street, San Francisco, CA 94104",
+  provider: "Adobe Inc.",
+  provider_address: "345 Park Avenue, San Jose, CA 95110-2704",
   customer: "Counterparty Legal Name",
   customer_address: "Address line, City, State, ZIP",
   effective_date: "2026-01-01",
-  governing_law: "State of Delaware, USA",
+  governing_law: "State of California, USA",
   master_reference: "Master Agreement dated {{effective_date}}",
 };
 

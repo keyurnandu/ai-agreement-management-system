@@ -11,7 +11,7 @@ export const SALES_TEMPLATE_LINES = [
   "ORDER FORM",
   "Under Master Customer Agreement",
   "",
-  "Provider: Demo Corp Inc.",
+  "Provider: Adobe Inc.",
   "Customer: _________________________________",
   "Order effective date: _____________________",
   "Master agreement reference: _________________",
