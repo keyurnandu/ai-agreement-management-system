@@ -2362,12 +2362,14 @@ button.source-link:hover .pill {
 }
 
 /* ── Master data (product catalog) ─────────────────────── */
-.md-table-card { padding: 0; overflow: hidden; }
+.md-table-card { padding: 0; overflow-x: auto; }
 .md-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
 }
+.md-table th, .md-table td { white-space: nowrap; }
+.md-table td:nth-child(2) { white-space: normal; min-width: 180px; }
 .md-table th {
   text-align: left;
   font-weight: 600;
@@ -2400,6 +2402,8 @@ button.source-link:hover .pill {
   border: 1px solid var(--border);
 }
 .md-badge.ai { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.md-badge.licensed { background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); border-color: transparent; }
+.md-badge.consumption { background: color-mix(in srgb, var(--amber) 18%, transparent); color: var(--amber); border-color: transparent; }
 .md-source-link { margin-left: 6px; color: var(--accent); font-size: 12px; }
 .md-form-grid {
   display: grid;

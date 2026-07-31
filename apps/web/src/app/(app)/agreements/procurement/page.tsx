@@ -20,7 +20,7 @@ export default async function ProcurementAgreementsPage() {
       activeTab="procurement"
       title="Agreements"
       subtitle="E-sign for vendor deals — signing pipeline and document attribute extraction."
-      extraction={<AgreementExtractionSection rows={docs} canEdit={canEdit} />}
+      extraction={<AgreementExtractionSection rows={docs} canEdit={canEdit} productExtraction />}
     >
       <AgreementsTable
         rows={ags.map((a) => ({

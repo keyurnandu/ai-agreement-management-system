@@ -267,22 +267,6 @@ export function DealToolbar({ dealId }: { dealId: string }) {
             Start signing
           </button>
         ) : null}
-        {deal.direction === "ORG_BUYING" && !["DRAFT", "WITH_VENDOR"].includes(deal.status) ? (
-          <button
-            className="btn secondary"
-            disabled={!!busyAction}
-            title="Extract product-level line items from this agreement into the procurement catalog"
-            onClick={() => void act(`/api/deals/${dealId}/import-products`, "import-products", "POST", { replace: true })}
-          >
-            {busyAction === "import-products" ? (
-              <>
-                <Spinner size={14} style={{ marginRight: 6, verticalAlign: "middle" }} /> Importing…
-              </>
-            ) : (
-              "Import products → catalog"
-            )}
-          </button>
-        ) : null}
         <HelpLink style={{ alignSelf: "center" }} />
       </div>
 

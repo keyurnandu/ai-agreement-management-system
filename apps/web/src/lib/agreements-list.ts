@@ -35,13 +35,19 @@ export async function listExtractionDocumentsForDirection(
   user: { id: string; role: string },
 ) {
   const ags = await listAgreementsForDirection(direction, user);
-  return ags
-    .filter((a) => a.document)
-    .map((a) => ({
-      agreementId: a.id,
-      agreementTitle: a.title,
-      agreementStatus: a.status,
-      documentId: a.document!.id,
-      documentTitle: a.document!.title,
-    }));
+  const withDoc = ags.filter((a) => a.document);
+  const agIds = withDoc.map((a) => a.id);
+  const deals = agIds.length
+    ? await prisma.deal.findMany({ where: { agreementId: { in: agIds } }, select: { id: true, agreementId: true } })
+    : [];
+  const dealByAg = new Map(deals.map((d) => [d.agreementId as string, d.id]));
+  return withDoc.map((a) => ({
+    agreementId: a.id,
+    agreementTitle: a.title,
+    agreementStatus: a.status,
+    documentId: a.document!.id,
+    documentTitle: a.document!.title,
+    dealId: dealByAg.get(a.id) ?? null,
+    direction,
+  }));
 }

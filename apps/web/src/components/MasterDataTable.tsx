@@ -13,6 +13,9 @@ type Product = {
   sku: string | null;
   manufacturer: string | null;
   family: string | null;
+  pricingModel: string | null;
+  quantity: number | null;
+  creditsPurchased: number | null;
   unitPrice: number | null;
   currency: string;
   pricingNotes: string | null;
@@ -29,6 +32,9 @@ type Draft = {
   sku: string;
   manufacturer: string;
   family: string;
+  pricingModel: string;
+  quantity: string;
+  creditsPurchased: string;
   unitPrice: string;
   currency: string;
   pricingNotes: string;
@@ -36,7 +42,7 @@ type Draft = {
   validUntil: string;
 };
 
-const EMPTY: Draft = { name: "", sku: "", manufacturer: "", family: "", unitPrice: "", currency: "USD", pricingNotes: "", validFrom: "", validUntil: "" };
+const EMPTY: Draft = { name: "", sku: "", manufacturer: "", family: "", pricingModel: "", quantity: "", creditsPurchased: "", unitPrice: "", currency: "USD", pricingNotes: "", validFrom: "", validUntil: "" };
 
 function money(v: number | null, currency = "USD") {
   if (v === null || v === undefined) return "—";
@@ -45,6 +51,15 @@ function money(v: number | null, currency = "USD") {
   } catch {
     return `${currency} ${v.toFixed(2)}`;
   }
+}
+function num(v: number | null) {
+  if (v === null || v === undefined) return "—";
+  return Number.isInteger(v) ? v.toLocaleString("en-US") : v.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+function modelLabel(v: string | null) {
+  if (v === "LICENSED") return "Licensed";
+  if (v === "CONSUMPTION") return "Consumption";
+  return "—";
 }
 function dateShort(v: string | null) {
   // Values are stored as date-only (UTC midnight); format in UTC to avoid an
@@ -65,6 +80,9 @@ function toDraft(p: Product): Draft {
     sku: p.sku ?? "",
     manufacturer: p.manufacturer ?? "",
     family: p.family ?? "",
+    pricingModel: p.pricingModel ?? "",
+    quantity: p.quantity != null ? String(p.quantity) : "",
+    creditsPurchased: p.creditsPurchased != null ? String(p.creditsPurchased) : "",
     unitPrice: p.unitPrice != null ? String(p.unitPrice) : "",
     currency: p.currency ?? "USD",
     pricingNotes: p.pricingNotes ?? "",
@@ -162,7 +180,8 @@ export function MasterDataTable() {
     }
   }
 
-  const salesCount = side === "SALES" ? rows?.length : undefined;
+  const isProc = side === "PROCUREMENT";
+  const colSpan = (isProc ? 11 : 8) + (canEdit ? 1 : 0);
 
   const fields = (
     <div className="md-form">
@@ -184,6 +203,22 @@ export function MasterDataTable() {
           <input className="input" value={draft.family} onChange={(e) => setDraft({ ...draft, family: e.target.value })} placeholder="Document Cloud" />
         </label>
         <label className="md-field">
+          <span>Pricing model</span>
+          <select className="input" value={draft.pricingModel} onChange={(e) => setDraft({ ...draft, pricingModel: e.target.value })}>
+            <option value="">—</option>
+            <option value="LICENSED">Licensed (per user/seat)</option>
+            <option value="CONSUMPTION">Consumption (prepaid credits)</option>
+          </select>
+        </label>
+        <label className="md-field">
+          <span>Total users / licenses</span>
+          <input className="input" value={draft.quantity} onChange={(e) => setDraft({ ...draft, quantity: e.target.value })} placeholder="1500" inputMode="numeric" />
+        </label>
+        <label className="md-field">
+          <span>Credits purchased</span>
+          <input className="input" value={draft.creditsPurchased} onChange={(e) => setDraft({ ...draft, creditsPurchased: e.target.value })} placeholder="Consumption deals" inputMode="numeric" />
+        </label>
+        <label className="md-field">
           <span>Unit price</span>
           <input className="input" value={draft.unitPrice} onChange={(e) => setDraft({ ...draft, unitPrice: e.target.value })} placeholder="199.00" inputMode="decimal" />
         </label>
@@ -192,11 +227,11 @@ export function MasterDataTable() {
           <input className="input" value={draft.currency} onChange={(e) => setDraft({ ...draft, currency: e.target.value })} placeholder="USD" maxLength={6} />
         </label>
         <label className="md-field">
-          <span>Valid from</span>
+          <span>{side === "SALES" ? "Valid from" : "Term start"}</span>
           <input className="input" type="date" value={draft.validFrom} onChange={(e) => setDraft({ ...draft, validFrom: e.target.value })} />
         </label>
         <label className="md-field">
-          <span>Valid until</span>
+          <span>{side === "SALES" ? "Valid until" : "Term end"}</span>
           <input className="input" type="date" value={draft.validUntil} onChange={(e) => setDraft({ ...draft, validUntil: e.target.value })} />
         </label>
         <label className="md-field md-col-2">
@@ -279,10 +314,25 @@ export function MasterDataTable() {
                 <th>Product ID</th>
                 <th>Product</th>
                 <th>SKU</th>
-                <th>{side === "SALES" ? "Manufacturer" : "Vendor"}</th>
-                <th>Family</th>
+                <th>{isProc ? "Vendor" : "Manufacturer"}</th>
+                {isProc ? (
+                  <>
+                    <th>Model</th>
+                    <th>Users</th>
+                    <th>Credits</th>
+                  </>
+                ) : (
+                  <th>Family</th>
+                )}
                 <th>Unit price</th>
-                <th>Validity</th>
+                {isProc ? (
+                  <>
+                    <th>Start</th>
+                    <th>End</th>
+                  </>
+                ) : (
+                  <th>Validity</th>
+                )}
                 <th>Source</th>
                 {canEdit ? <th aria-label="Actions" /> : null}
               </tr>
@@ -291,7 +341,7 @@ export function MasterDataTable() {
               {filtered.map((p) =>
                 editingId === p.id ? (
                   <tr key={p.id}>
-                    <td colSpan={canEdit ? 9 : 8}>{fields}</td>
+                    <td colSpan={colSpan}>{fields}</td>
                   </tr>
                 ) : (
                   <tr key={p.id}>
@@ -302,9 +352,30 @@ export function MasterDataTable() {
                     </td>
                     <td className="mono">{p.sku ?? "—"}</td>
                     <td>{p.manufacturer ?? "—"}</td>
-                    <td>{p.family ?? "—"}</td>
+                    {isProc ? (
+                      <>
+                        <td>
+                          {p.pricingModel ? (
+                            <span className={`md-badge ${p.pricingModel === "CONSUMPTION" ? "consumption" : "licensed"}`}>{modelLabel(p.pricingModel)}</span>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td>{num(p.quantity)}</td>
+                        <td>{num(p.creditsPurchased)}</td>
+                      </>
+                    ) : (
+                      <td>{p.family ?? "—"}</td>
+                    )}
                     <td>{money(p.unitPrice, p.currency)}</td>
-                    <td style={{ fontSize: 12 }}>{validity(p)}</td>
+                    {isProc ? (
+                      <>
+                        <td style={{ fontSize: 12 }}>{dateShort(p.validFrom) ?? "—"}</td>
+                        <td style={{ fontSize: 12 }}>{dateShort(p.validUntil) ?? "—"}</td>
+                      </>
+                    ) : (
+                      <td style={{ fontSize: 12 }}>{validity(p)}</td>
+                    )}
                     <td style={{ fontSize: 12 }}>
                       {p.method === "AI" ? <span className="md-badge ai">AI</span> : <span className="md-badge">Manual</span>}
                       {p.sourceHref ? (

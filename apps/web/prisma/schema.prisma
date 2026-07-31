@@ -471,11 +471,14 @@ model MasterProduct {
   sku          String? // manufacturer part number — not unique
   manufacturer String? // manufacturer / organization the product is dealt with
   family       String? // product family
+  pricingModel String? // LICENSED (per-seat/user) | CONSUMPTION (prepaid credits / usage)
+  quantity     Float? // total users / licenses / seats signed for (licensed model)
+  creditsPurchased Float? // prepaid credits purchased in advance (consumption model)
   unitPrice    Float?
   currency     String  @default("USD")
   pricingNotes String? // family / tiered pricing detail
-  validFrom    DateTime?
-  validUntil   DateTime? // validity — important for both catalogs
+  validFrom    DateTime? // term start (procurement) / price-valid-from (sales)
+  validUntil   DateTime? // term end (procurement) / price-valid-until (sales)
   status       String  @default("ACTIVE") // ACTIVE | ARCHIVED
   method       String  @default("MANUAL") // MANUAL | AI (provenance of the row)
   sourceDocumentId String? // Document.id the value was extracted from (no FK, mirrors AttributeValue)

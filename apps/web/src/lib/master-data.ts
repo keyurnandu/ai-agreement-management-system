@@ -1,9 +1,18 @@
 import { prisma } from "@/lib/db";
 import { runExtraction } from "@/lib/extraction";
+import { intelligence } from "@/lib/services/client";
 import { allocateCommercialId } from "@/lib/commercial-types";
 import type { Prisma, MasterProduct } from "@prisma/client";
 
 export type ProductSide = "SALES" | "PROCUREMENT";
+export type PricingModel = "LICENSED" | "CONSUMPTION";
+
+export function normalizePricingModel(v: unknown): PricingModel | null {
+  const s = String(v ?? "").toUpperCase();
+  if (s.startsWith("CONSUM") || s.includes("CREDIT") || s.includes("USAGE")) return "CONSUMPTION";
+  if (s.startsWith("LICEN") || s.includes("SEAT") || s.includes("SUBSCRIP")) return "LICENSED";
+  return null;
+}
 
 /** Human-readable, sequential surrogate product code: PRD-1, PRD-2, … Unique,
  * searchable, and stable even when the manufacturer SKU/name changes. */
@@ -17,11 +26,14 @@ export type MasterProductInput = {
   sku?: string | null;
   manufacturer?: string | null;
   family?: string | null;
+  pricingModel?: string | null;
+  quantity?: number | string | null;
+  creditsPurchased?: number | string | null;
   unitPrice?: number | string | null;
   currency?: string | null;
   pricingNotes?: string | null;
-  validFrom?: string | null; // ISO date
-  validUntil?: string | null; // ISO date
+  validFrom?: string | null; // ISO date (term start)
+  validUntil?: string | null; // ISO date (term end)
   status?: string | null;
 };
 
@@ -72,6 +84,9 @@ function toData(input: MasterProductInput): Partial<Prisma.MasterProductUnchecke
   if (input.sku !== undefined) data.sku = input.sku?.trim() || null;
   if (input.manufacturer !== undefined) data.manufacturer = input.manufacturer?.trim() || null;
   if (input.family !== undefined) data.family = input.family?.trim() || null;
+  if (input.pricingModel !== undefined) data.pricingModel = input.pricingModel ? normalizePricingModel(input.pricingModel) : null;
+  if (input.quantity !== undefined) data.quantity = parsePrice(input.quantity);
+  if (input.creditsPurchased !== undefined) data.creditsPurchased = parsePrice(input.creditsPurchased);
   if (input.pricingNotes !== undefined) data.pricingNotes = input.pricingNotes?.trim() || null;
   if (input.currency !== undefined) data.currency = (input.currency?.trim() || "USD").toUpperCase().slice(0, 6);
   if (input.unitPrice !== undefined) data.unitPrice = parsePrice(input.unitPrice);
@@ -91,6 +106,9 @@ export async function createProduct(input: MasterProductInput, ownerId: string):
       sku: data.sku ?? null,
       manufacturer: data.manufacturer ?? null,
       family: data.family ?? null,
+      pricingModel: data.pricingModel ?? null,
+      quantity: data.quantity ?? null,
+      creditsPurchased: data.creditsPurchased ?? null,
       unitPrice: data.unitPrice ?? null,
       currency: data.currency ?? "USD",
       pricingNotes: data.pricingNotes ?? null,
@@ -258,6 +276,69 @@ function dedupeRows(rows: ParsedRow[]): ParsedRow[] {
   return out;
 }
 
+type RichProduct = {
+  name: string;
+  sku: string | null;
+  quantity: number | null;
+  unitPrice: number | null;
+  currency: string;
+  startDate: string | null; // ISO
+  endDate: string | null;
+  pricingModel: PricingModel | null;
+  creditsPurchased: number | null;
+  notes: string | null;
+};
+
+/** Second pass: turn the extracted line-item table into structured products with
+ * term dates, quantities, pricing model (licensed vs consumption), and credits. */
+async function structureProducts(markdown: string): Promise<RichProduct[]> {
+  const system =
+    "You convert an extracted procurement line-item table into STRICT JSON — return ONLY a JSON array, no prose. " +
+    "Merge rows that describe the same product. For each distinct product return an object: " +
+    '{"name": string, "sku": string|null, "quantity": number|null (total users/licenses/seats/units), ' +
+    '"unitPrice": number|null, "currency": string (3-letter, default "USD"), ' +
+    '"startDate": string|null (yyyy-mm-dd), "endDate": string|null (yyyy-mm-dd), ' +
+    '"pricingModel": "LICENSED"|"CONSUMPTION" (LICENSED = per-seat/user/subscription licenses; ' +
+    "CONSUMPTION = usage/metered/prepaid-credits/true-up billing), " +
+    '"creditsPurchased": number|null (prepaid credits/units bought in advance, consumption only), ' +
+    '"notes": string|null (a short human summary)}. Parse dates and quantities out of any description text.';
+  try {
+    const { text } = await intelligence.complete("LINE ITEM TABLE:\n" + markdown, system, 1400);
+    const m = text.match(/\[[\s\S]*\]/);
+    if (!m) return [];
+    const arr = JSON.parse(m[0]) as unknown[];
+    return arr
+      .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+      .map((o) => ({
+        name: String(o.name ?? "").trim(),
+        sku: o.sku ? String(o.sku).trim() : null,
+        quantity: parsePrice(o.quantity as number | string | null),
+        unitPrice: parsePrice(o.unitPrice as number | string | null),
+        currency: o.currency ? String(o.currency).toUpperCase().slice(0, 6) : "USD",
+        startDate: o.startDate ? String(o.startDate) : null,
+        endDate: o.endDate ? String(o.endDate) : null,
+        pricingModel: normalizePricingModel(o.pricingModel),
+        creditsPurchased: parsePrice(o.creditsPurchased as number | string | null),
+        notes: o.notes ? String(o.notes).trim() : null,
+      }))
+      .filter((p) => p.name);
+  } catch {
+    return [];
+  }
+}
+
+function dedupeRich(rows: RichProduct[]): RichProduct[] {
+  const seen = new Set<string>();
+  const out: RichProduct[] = [];
+  for (const r of rows) {
+    const key = `${(r.sku ?? "").toLowerCase()}|${r.name.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(r);
+  }
+  return out;
+}
+
 async function productsMarkdownFor(documentId: string): Promise<string | null> {
   const def = await prisma.attributeDefinition.findUnique({ where: { key: "products_services" }, select: { id: true } });
   if (!def) return null;
@@ -301,10 +382,28 @@ export async function importProcurementProductsFromDeal(
   }
   if (rows.length === 0) return { imported: 0, alreadyImported: false, note: "No line items found in the signed document." };
 
+  // Structure the line items into rich products (term dates, quantity, pricing
+  // model, prepaid credits). Fall back to the basic parsed rows if it fails.
+  let rich = dedupeRich(markdown ? await structureProducts(markdown) : []);
+  if (rich.length === 0) {
+    rich = rows.map((r) => ({
+      name: r.name || r.sku || "Unnamed product",
+      sku: r.sku ?? null,
+      quantity: r.quantity ?? null,
+      unitPrice: r.unitPrice ?? null,
+      currency: r.currency ?? "USD",
+      startDate: null,
+      endDate: null,
+      pricingModel: null,
+      creditsPurchased: null,
+      notes: r.description ?? null,
+    }));
+  }
+
   if (existing > 0) await prisma.masterProduct.deleteMany({ where: { sourceDealId: deal.id, method: "AI" } });
 
   // Sequential create (not createMany) so each row gets its own PRD- code.
-  for (const r of rows) {
+  for (const r of rich) {
     await prisma.masterProduct.create({
       data: {
         skuId: await newProductCode(),
@@ -312,9 +411,14 @@ export async function importProcurementProductsFromDeal(
         name: r.name || r.sku || "Unnamed product",
         sku: r.sku ?? null,
         manufacturer: deal.vendorName ?? null,
+        pricingModel: r.pricingModel ?? null,
+        quantity: r.quantity ?? null,
+        creditsPurchased: r.creditsPurchased ?? null,
         unitPrice: r.unitPrice ?? null,
         currency: r.currency ?? "USD",
-        pricingNotes: r.description ?? null,
+        pricingNotes: r.notes ?? null,
+        validFrom: parseDate(r.startDate),
+        validUntil: parseDate(r.endDate),
         method: "AI",
         sourceDealId: deal.id,
         sourceDocumentId: deal.documentId,
@@ -322,5 +426,5 @@ export async function importProcurementProductsFromDeal(
       },
     });
   }
-  return { imported: rows.length, alreadyImported: false };
+  return { imported: rich.length, alreadyImported: false };
 }

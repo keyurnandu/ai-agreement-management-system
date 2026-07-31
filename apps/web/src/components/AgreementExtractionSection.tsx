@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { AttributesPanel } from "@/components/AttributesPanel";
 import { AttributeHighlightProvider } from "@/components/AttributeHighlightContext";
 
@@ -10,14 +11,59 @@ type Row = {
   agreementStatus: string;
   documentId: string;
   documentTitle: string;
+  dealId?: string | null;
 };
+
+/** Extract products from a signed procurement agreement into the master-data
+ * catalog. Enabled only once the agreement is COMPLETED (fully signed). */
+function ProductExtractButton({ dealId, completed }: { dealId: string | null | undefined; completed: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function run() {
+    if (!dealId || busy) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await fetch(`/api/deals/${dealId}/import-products`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ replace: true }),
+      });
+      const j = (await r.json().catch(() => ({}))) as { message?: string; error?: string };
+      setMsg(j.message ?? j.error ?? (r.ok ? "Done." : `Error ${r.status}`));
+    } catch {
+      setMsg("Extraction failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!completed) {
+    return (
+      <span className="muted" style={{ fontSize: 12 }} title="Product extraction runs once the agreement is fully signed">
+        Products extract after signing
+      </span>
+    );
+  }
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <button type="button" className="btn secondary" style={{ fontSize: 12, padding: "4px 10px" }} disabled={busy || !dealId} onClick={() => void run()}>
+        {busy ? "Extracting…" : "Extract products → catalog"}
+      </button>
+      {msg ? <span className="muted" style={{ fontSize: 12 }}>{msg} <Link href="/master-data">View catalog →</Link></span> : null}
+    </div>
+  );
+}
 
 export function AgreementExtractionSection({
   rows,
   canEdit,
+  productExtraction,
 }: {
   rows: Row[];
   canEdit: boolean;
+  productExtraction?: boolean;
 }) {
   if (rows.length === 0) {
     return (
@@ -54,6 +100,11 @@ export function AgreementExtractionSection({
                   Open PDF
                 </Link>
               </div>
+              {productExtraction && canEdit ? (
+                <div style={{ margin: "0 0 12px" }}>
+                  <ProductExtractButton dealId={r.dealId} completed={r.agreementStatus === "COMPLETED"} />
+                </div>
+              ) : null}
               <AttributesPanel documentId={r.documentId} documentTitle={r.documentTitle} canEdit={canEdit} />
             </div>
           ))}
