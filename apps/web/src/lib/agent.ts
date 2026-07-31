@@ -107,7 +107,7 @@ async function openIssueCounts(dealIds: string[]): Promise<Map<string, number>> 
   return m;
 }
 
-export async function runAssistant(message: string, actor: Actor): Promise<AssistantResult> {
+export async function runAssistant(message: string, actor: Actor, onStep?: (step: Step) => void): Promise<AssistantResult> {
   const where = roleAtLeast(actor.role, "MANAGER") ? {} : { ownerId: actor.id };
   const deals = (await prisma.deal.findMany({
     where,
@@ -181,7 +181,9 @@ export async function runAssistant(message: string, actor: Actor): Promise<Assis
 
     // Safe, non-terminal tools.
     const { result, link } = await execSafe(tool, args, { deals, docs, issueCounts, actor });
-    steps.push({ tool, result });
+    const step = { tool, result };
+    steps.push(step);
+    onStep?.(step);
     if (link) links.push(link);
   }
 

@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 type LinkT = { href: string; label: string };
 type Proposal = { tool: string; dealId?: string; title?: string; summary: string; args?: Record<string, string> };
 type StepT = { tool: string; result: string };
-type Msg = { role: "user" | "assistant"; text: string; links?: LinkT[]; proposal?: Proposal; steps?: StepT[] };
+type Msg = { role: "user" | "assistant"; text: string; links?: LinkT[]; proposal?: Proposal; steps?: StepT[]; id?: string };
 
 const TOOL_LABEL: Record<string, string> = {
   find: "Searched deals",
@@ -41,18 +41,47 @@ export function AssistantChat() {
     const q = text.trim();
     if (!q || busy) return;
     setInput("");
-    setMessages((m) => [...m, { role: "user", text: q }]);
+    const aid = (globalThis.crypto?.randomUUID?.() ?? String(Math.random())) as string;
+    setMessages((m) => [...m, { role: "user", text: q }, { role: "assistant", id: aid, text: "", steps: [] }]);
     setBusy(true);
+    const patch = (fn: (msg: Msg) => Msg) => setMessages((m) => m.map((msg) => (msg.id === aid ? fn(msg) : msg)));
     try {
       const r = await fetch("/api/assistant", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ message: q }),
       });
-      const j = (await r.json()) as Msg & { reply?: string };
-      setMessages((m) => [...m, { role: "assistant", text: j.reply ?? "(no reply)", links: j.links, proposal: j.proposal, steps: j.steps }]);
+      if (!r.body) {
+        const j = (await r.json().catch(() => ({}))) as { reply?: string };
+        patch((msg) => ({ ...msg, text: j.reply ?? "Sorry — no response." }));
+        return;
+      }
+      const reader = r.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          let ev: { type?: string; step?: StepT; reply?: string; links?: LinkT[]; proposal?: Proposal; steps?: StepT[] };
+          try {
+            ev = JSON.parse(line);
+          } catch {
+            continue;
+          }
+          if (ev.type === "step" && ev.step) {
+            patch((msg) => ({ ...msg, steps: [...(msg.steps ?? []), ev.step!] }));
+          } else if (ev.type === "final") {
+            patch((msg) => ({ ...msg, text: ev.reply ?? "(no reply)", links: ev.links, proposal: ev.proposal, steps: ev.steps ?? msg.steps }));
+          }
+        }
+      }
     } catch {
-      setMessages((m) => [...m, { role: "assistant", text: "Sorry — that request failed." }]);
+      patch((msg) => ({ ...msg, text: "Sorry — that request failed." }));
     } finally {
       setBusy(false);
     }
@@ -108,7 +137,13 @@ export function AssistantChat() {
                   ))}
                 </div>
               ) : null}
-              <div className="chat-bubble">{m.text}</div>
+              {m.text ? (
+                <div className="chat-bubble">{m.text}</div>
+              ) : m.role === "assistant" && busy ? (
+                <div className="chat-bubble chat-typing">
+                  <span /> <span /> <span />
+                </div>
+              ) : null}
               {m.links && m.links.length ? (
                 <div className="chat-cites">
                   {m.links.map((l) => (
@@ -144,13 +179,6 @@ export function AssistantChat() {
             </div>
           ))
         )}
-        {busy ? (
-          <div className="chat-msg assistant">
-            <div className="chat-bubble chat-typing">
-              <span /> <span /> <span />
-            </div>
-          </div>
-        ) : null}
       </div>
 
       <form
