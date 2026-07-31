@@ -11,6 +11,7 @@ export interface QaCitation {
   text: string;
   docId?: string;
   docTitle?: string;
+  href?: string;
 }
 export interface QaResult {
   answer: string;

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useOptionalAttributeHighlight } from "@/components/AttributeHighlightContext";
 
-type Citation = { n: number; score: number; text: string; docId?: string; docTitle?: string; page?: number };
+type Citation = { n: number; score: number; text: string; docId?: string; docTitle?: string; page?: number; href?: string };
 type Msg = {
   role: "user" | "assistant";
   text: string;
@@ -29,10 +29,17 @@ const DEAL_SUGGESTIONS = [
   "What compliance issues are open?",
   "What is our liability exposure?",
 ];
+const PORTFOLIO_SUGGESTIONS = [
+  "Which deals are at risk?",
+  "What's the total value in flight?",
+  "What's expiring in the next 90 days?",
+  "How many deals in each stage?",
+];
 
 function suggestionsFor(scope: string) {
   if (scope === "collection") return COLLECTION_SUGGESTIONS;
   if (scope === "deal") return DEAL_SUGGESTIONS;
+  if (scope === "portfolio") return PORTFOLIO_SUGGESTIONS;
   return DOC_SUGGESTIONS;
 }
 
@@ -48,7 +55,7 @@ export function ChatPanel({
   title: string;
   open: boolean;
   onClose: () => void;
-  scope?: "document" | "collection" | "deal";
+  scope?: "document" | "collection" | "deal" | "portfolio";
   askUrl?: string;
 }) {
   const highlight = useOptionalAttributeHighlight();
@@ -92,6 +99,10 @@ export function ChatPanel({
   // Citation click: collection citations open their source document; document
   // citations locate + highlight on the PDF in view (if the highlight context exists).
   async function jumpTo(c: Citation) {
+    if (c.href) {
+      window.open(c.href, "_blank", "noopener");
+      return;
+    }
     if (scope === "collection" && c.docId) {
       window.open(`/documents/${c.docId}`, "_blank", "noopener");
       return;
@@ -135,7 +146,9 @@ export function ChatPanel({
                     ? "Ask across every document in this collection. Each answer cites the source document — click it to open."
                     : scope === "deal"
                       ? "Ask about this deal — status, blockers, compliance, or the contract itself. Answers cite the source."
-                      : "Ask anything about this document. Answers cite the source — click a citation to jump to it on the PDF."}
+                      : scope === "portfolio"
+                        ? "Ask about your whole portfolio — value, risk, renewals, and stages. Answers cite the deals — click to open."
+                        : "Ask anything about this document. Answers cite the source — click a citation to jump to it on the PDF."}
                 </p>
                 <div className="chat-suggest">
                   {suggestionsFor(scope).map((s) => (

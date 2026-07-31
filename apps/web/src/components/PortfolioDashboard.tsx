@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PortfolioAnalytics, PortfolioPhase, PortfolioRow } from "@/lib/portfolio-analytics";
+import { ChatPanel } from "@/components/ChatPanel";
 
 const PHASE_TABS: { id: PortfolioPhase | "all"; label: string }[] = [
   { id: "all", label: "All" },
@@ -32,6 +33,7 @@ export function PortfolioDashboard({ direction }: { direction: "ORG_SELLING" | "
   const [data, setData] = useState<PortfolioAnalytics | null>(null);
   const [phase, setPhase] = useState<PortfolioPhase | "all">("all");
   const [q, setQ] = useState("");
+  const [chatOpen, setChatOpen] = useState(false);
 
   const load = useCallback(async () => {
     const r = await fetch(`/api/analytics/portfolio?direction=${direction}`);
@@ -91,6 +93,10 @@ export function PortfolioDashboard({ direction }: { direction: "ORG_SELLING" | "
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
+        <div style={{ flex: 1 }} />
+        <button type="button" className={chatOpen ? "btn" : "btn secondary"} onClick={() => setChatOpen((v) => !v)}>
+          💬 Ask AI
+        </button>
       </div>
 
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -145,6 +151,15 @@ export function PortfolioDashboard({ direction }: { direction: "ORG_SELLING" | "
           </div>
         )}
       </div>
+
+      <ChatPanel
+        documentId=""
+        title={direction === "ORG_SELLING" ? "Sales portfolio" : "Procurement portfolio"}
+        scope="portfolio"
+        askUrl={`/api/analytics/ask?direction=${direction}`}
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+      />
     </>
   );
 }
