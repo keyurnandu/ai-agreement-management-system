@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useAttributeHighlight } from "@/components/AttributeHighlightContext";
 
 type Risk = { title: string; severity: string; note: string };
 type Analysis = { summary: string; risks: Risk[]; obligations: string[]; key_dates: string[]; provider: string };
@@ -19,10 +20,12 @@ export function InsightsPanel({
   versions?: number[];
   embedded?: boolean;
 }) {
+  const { setHighlight } = useAttributeHighlight();
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [clauses, setClauses] = useState<Clause[] | null>(null);
   const [findings, setFindings] = useState<Finding[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [locating, setLocating] = useState<string | null>(null);
   const [from, setFrom] = useState(versions[versions.length - 1] ?? 1);
   const [to, setTo] = useState(versions[0] ?? 1);
   const [diff, setDiff] = useState<string | null>(null);
@@ -37,6 +40,28 @@ export function InsightsPanel({
       await fn();
     } finally {
       setBusy(null);
+    }
+  }
+
+  // Jump an insight (a key date, risk phrase, or clause title) to its spot on
+  // the rendered PDF using the same locate endpoint as attribute sources.
+  async function locate(text: string) {
+    const q = text.trim();
+    if (!q) return;
+    setLocating(q);
+    try {
+      const r = await fetch(`/api/documents/${documentId}/locate`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ query: q.slice(0, 120) }),
+      });
+      if (!r.ok) return;
+      const j = (await r.json()) as { page?: number; rect?: { x: number; y: number; w: number; h: number } | null };
+      if (j.rect) setHighlight({ key: `insight:${q}`, page: j.page ?? 1, snippet: q, start: 0, end: 0, rect: j.rect });
+    } catch {
+      /* ignore — not every insight has a literal match on the page */
+    } finally {
+      setLocating(null);
     }
   }
 
@@ -64,14 +89,33 @@ export function InsightsPanel({
             <p style={{ fontSize: 13 }}>{analysis.summary || "—"}</p>
             <h3 style={{ fontSize: 13, margin: "12px 0 4px" }}>Key dates</h3>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {analysis.key_dates.length ? analysis.key_dates.map((d, i) => <span key={i} className="pill">{d}</span>) : <span className="muted" style={{ fontSize: 13 }}>—</span>}
+              {analysis.key_dates.length ? analysis.key_dates.map((d, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className="pill"
+                  style={{ cursor: "pointer", opacity: locating === d.trim() ? 0.6 : 1 }}
+                  title="Find on contract"
+                  onClick={() => void locate(d)}
+                >
+                  {d} <span style={{ color: "var(--amber)", fontSize: 10 }}>↗</span>
+                </button>
+              )) : <span className="muted" style={{ fontSize: 13 }}>—</span>}
             </div>
           </div>
           <div>
             <h3 style={{ fontSize: 13, margin: "4px 0" }}>Risks</h3>
             {analysis.risks.length ? analysis.risks.map((r, i) => (
               <div key={i} style={{ marginBottom: 6 }}>
-                <span className={`badge ${SEV[r.severity] ?? "gray"}`}>{r.severity}</span> <strong style={{ fontSize: 13 }}>{r.title}</strong>
+                <span className={`badge ${SEV[r.severity] ?? "gray"}`}>{r.severity}</span>{" "}
+                <button
+                  type="button"
+                  onClick={() => void locate(r.title)}
+                  title="Find on contract"
+                  style={{ background: "none", border: "none", padding: 0, cursor: "pointer", font: "inherit", color: "var(--text)", fontWeight: 700, fontSize: 13 }}
+                >
+                  {r.title} <span style={{ color: "var(--amber)", fontSize: 10 }}>↗</span>
+                </button>
                 <div className="muted" style={{ fontSize: 12 }}>{r.note}</div>
               </div>
             )) : <p className="muted" style={{ fontSize: 13 }}>No flags.</p>}
@@ -86,7 +130,17 @@ export function InsightsPanel({
           <h3 style={{ fontSize: 13, margin: "0 0 6px" }}>Clauses ({clauses.length})</h3>
           {clauses.map((c, i) => (
             <div key={i} className="row" style={{ alignItems: "flex-start", padding: "4px 0" }}>
-              <div style={{ fontSize: 13 }}>{c.title}<div className="muted" style={{ fontSize: 11 }}>{c.category}</div></div>
+              <div style={{ fontSize: 13 }}>
+                <button
+                  type="button"
+                  onClick={() => void locate(c.title)}
+                  title="Find on contract"
+                  style={{ background: "none", border: "none", padding: 0, cursor: "pointer", font: "inherit", color: "var(--accent)", fontSize: 13 }}
+                >
+                  {c.title} ↗
+                </button>
+                <div className="muted" style={{ fontSize: 11 }}>{c.category}</div>
+              </div>
               <span className={`badge ${SEV[c.risk] ?? "gray"}`}>{c.risk}</span>
             </div>
           ))}
