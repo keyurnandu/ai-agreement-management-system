@@ -22,35 +22,22 @@ export function CollapsibleHierarchyNode({
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <div style={{ marginLeft: depth * 16 }}>
-      <div
-        className="card"
-        style={{ marginBottom: 8, padding: "10px 12px" }}
-      >
-        <div className="row" style={{ alignItems: "center", gap: 8 }}>
-          {hasChildren ? (
-            <button
-              type="button"
-              aria-expanded={open}
-              onClick={() => setOpen((o) => !o)}
-              style={{
-                background: "none",
-                border: "none",
-                color: "var(--text)",
-                cursor: "pointer",
-                fontSize: 12,
-                width: 20,
-                padding: 0,
-              }}
-            >
-              {open ? "▼" : "▶"}
-            </button>
-          ) : (
-            <span style={{ width: 20, display: "inline-block" }} />
-          )}
-          <div style={{ flex: 1, minWidth: 0 }}>{label}</div>
-          {actions}
-        </div>
+    <div style={{ marginLeft: depth * 18 }}>
+      <div className="hierarchy-row">
+        {hasChildren ? (
+          <button
+            type="button"
+            className="hierarchy-toggle"
+            aria-expanded={open}
+            onClick={() => setOpen((o) => !o)}
+          >
+            {open ? "▼" : "▶"}
+          </button>
+        ) : (
+          <span className="hierarchy-toggle-spacer" />
+        )}
+        <div style={{ flex: 1, minWidth: 0 }}>{label}</div>
+        {actions ? <div className="hierarchy-actions">{actions}</div> : null}
       </div>
       {hasChildren && open ? children : null}
     </div>

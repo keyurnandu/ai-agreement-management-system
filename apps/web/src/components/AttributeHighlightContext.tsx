@@ -26,3 +26,9 @@ export function useAttributeHighlight() {
   if (!ctx) throw new Error("useAttributeHighlight must be used within AttributeHighlightProvider");
   return ctx;
 }
+
+/** Non-throwing variant for components that may render outside the provider
+ *  (e.g. the collection chat, where citations link out instead of highlighting). */
+export function useOptionalAttributeHighlight(): Ctx | null {
+  return useContext(AttributeHighlightContext);
+}

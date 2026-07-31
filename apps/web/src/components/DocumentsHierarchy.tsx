@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { RemoveButton } from "@/components/RemoveButton";
 import { buildHierarchy, CollapsibleHierarchyNode, type HierarchyNode } from "@/components/CollapsibleHierarchy";
 import { Spinner } from "@/components/Spinner";
+import { ChatPanel } from "@/components/ChatPanel";
 
 type DocRow = {
   id: string;
@@ -46,6 +47,7 @@ function DocNode({
   selected,
   onToggle,
   collections,
+  onAsk,
 }: {
   node: HierarchyNode<TreeRow>;
   depth: number;
@@ -54,6 +56,7 @@ function DocNode({
   selected: Set<string>;
   onToggle: (id: string) => void;
   collections: { id: string; title: string }[];
+  onAsk: (id: string, title: string) => void;
 }) {
   const isCollection = node.kind === "COLLECTION";
   const checked = selected.has(node.id);
@@ -75,7 +78,7 @@ function DocNode({
       depth={depth}
       hasChildren={node.children.length > 0}
       label={
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, minWidth: 0 }}>
+        <div className="doc-row-main">
           {isAdmin ? (
             <input
               type="checkbox"
@@ -83,30 +86,37 @@ function DocNode({
               aria-label={`Select ${node.title}`}
               onChange={() => onToggle(node.id)}
               onClick={(e) => e.stopPropagation()}
-              style={{ marginTop: 3, flexShrink: 0 }}
+              style={{ flexShrink: 0 }}
             />
           ) : null}
+          <span className={`doc-icon ${isCollection ? "folder" : "file"}`} aria-hidden="true">
+            {isCollection ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></svg>
+            )}
+          </span>
           {isCollection ? (
-            <div>
-              <strong>
+            <div style={{ minWidth: 0 }}>
+              <strong style={{ fontSize: 14 }}>
                 {node.commercialId ? (
-                  <span style={{ fontFamily: "ui-monospace, monospace", marginRight: 8 }}>{node.commercialId}</span>
+                  <span style={{ fontFamily: "ui-monospace, monospace", marginRight: 8, color: "var(--muted)", fontSize: 12 }}>{node.commercialId}</span>
                 ) : null}
                 {node.title}
               </strong>
-              <div className="muted" style={{ fontSize: 12 }}>
-                Collection · {node.ownerEmail}
+              <div className="muted" style={{ fontSize: 11 }}>
+                Collection · {node.children.length} item{node.children.length === 1 ? "" : "s"}
               </div>
             </div>
           ) : (
             <Link href={`/documents/${node.id}`} style={{ textDecoration: "none", color: "inherit", minWidth: 0 }}>
-              <strong>
+              <strong style={{ fontSize: 14 }}>
                 {node.commercialId ? (
-                  <span style={{ fontFamily: "ui-monospace, monospace", marginRight: 8 }}>{node.commercialId}</span>
+                  <span style={{ fontFamily: "ui-monospace, monospace", marginRight: 8, color: "var(--muted)", fontSize: 12 }}>{node.commercialId}</span>
                 ) : null}
                 {node.title}
               </strong>
-              <div className="muted" style={{ fontSize: 12 }}>
+              <div className="muted" style={{ fontSize: 11 }}>
                 PDF · {node.pageCount} pages · v{node.version}
               </div>
             </Link>
@@ -116,13 +126,20 @@ function DocNode({
       actions={
         <>
           {isCollection ? (
-            <Link
-              className="btn secondary"
-              style={{ padding: "4px 10px", fontSize: 12 }}
-              href={`/documents?uploadTo=${node.id}`}
-            >
-              + PDF
-            </Link>
+            <>
+              <button
+                type="button"
+                className="btn always"
+                style={{ padding: "3px 10px", fontSize: 12 }}
+                onClick={() => onAsk(node.id, node.title)}
+                title="Chat with every document in this collection"
+              >
+                💬 Ask AI
+              </button>
+              <Link className="btn secondary always" style={{ padding: "3px 10px", fontSize: 12 }} href={`/documents?uploadTo=${node.id}`}>
+                + PDF
+              </Link>
+            </>
           ) : null}
           {collections.length > 0 ? (
             <select
@@ -131,7 +148,7 @@ function DocNode({
               title="Move to collection"
               value={node.collectionParentId ?? "__top__"}
               onChange={(e) => void move(e.target.value)}
-              style={{ width: "auto", padding: "4px 8px", fontSize: 12 }}
+              style={{ width: "auto", padding: "3px 8px", fontSize: 12 }}
             >
               <option value="__top__">Top level</option>
               {collections
@@ -167,6 +184,7 @@ function DocNode({
           selected={selected}
           onToggle={onToggle}
           collections={collections}
+          onAsk={onAsk}
         />
       ))}
     </CollapsibleHierarchyNode>
@@ -186,6 +204,7 @@ export function DocumentsHierarchy({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [chat, setChat] = useState<{ id: string; title: string } | null>(null);
 
   const refresh = useCallback(() => {
     void fetch("/api/documents/list")
@@ -328,8 +347,13 @@ export function DocumentsHierarchy({
           selected={selected}
           onToggle={toggleOne}
           collections={collections}
+          onAsk={(cid, ctitle) => setChat({ id: cid, title: ctitle })}
         />
       ))}
+
+      {chat ? (
+        <ChatPanel documentId={chat.id} title={chat.title} scope="collection" open onClose={() => setChat(null)} />
+      ) : null}
     </div>
   );
 }

@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useAttributeHighlight } from "@/components/AttributeHighlightContext";
+import { useOptionalAttributeHighlight } from "@/components/AttributeHighlightContext";
 
-type Citation = { n: number; score: number; text: string };
+type Citation = { n: number; score: number; text: string; docId?: string; docTitle?: string; page?: number };
 type Msg = {
   role: "user" | "assistant";
   text: string;
@@ -11,11 +11,17 @@ type Msg = {
   provider?: string;
 };
 
-const SUGGESTIONS = [
+const DOC_SUGGESTIONS = [
   "Summarize this contract in plain English",
   "What is our liability exposure?",
   "When does this expire and how do we renew?",
   "What are our payment obligations?",
+];
+const COLLECTION_SUGGESTIONS = [
+  "Which contract has the highest liability exposure?",
+  "Summarize the agreements in this collection",
+  "Which of these auto-renews?",
+  "What governing law do these use?",
 ];
 
 export function ChatPanel({
@@ -23,13 +29,15 @@ export function ChatPanel({
   title,
   open,
   onClose,
+  scope = "document",
 }: {
   documentId: string;
   title: string;
   open: boolean;
   onClose: () => void;
+  scope?: "document" | "collection";
 }) {
-  const { setHighlight } = useAttributeHighlight();
+  const highlight = useOptionalAttributeHighlight();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -65,9 +73,14 @@ export function ChatPanel({
     }
   }
 
-  // Jump a citation to its spot on the rendered PDF (same locate as attributes).
-  async function jumpTo(text: string) {
-    const query = text.replace(/\s+/g, " ").trim().slice(0, 120);
+  // Citation click: collection citations open their source document; document
+  // citations locate + highlight on the PDF in view (if the highlight context exists).
+  async function jumpTo(c: Citation) {
+    if (scope === "collection" && c.docId) {
+      window.open(`/documents/${c.docId}`, "_blank", "noopener");
+      return;
+    }
+    const query = c.text.replace(/\s+/g, " ").trim().slice(0, 120);
     try {
       const r = await fetch(`/api/documents/${documentId}/locate`, {
         method: "POST",
@@ -76,7 +89,7 @@ export function ChatPanel({
       });
       if (!r.ok) return;
       const j = (await r.json()) as { page?: number; rect?: { x: number; y: number; w: number; h: number } | null };
-      if (j.rect) setHighlight({ key: `chat:${query}`, page: j.page ?? 1, snippet: query, start: 0, end: 0, rect: j.rect });
+      if (j.rect) highlight?.setHighlight({ key: `chat:${query}`, page: j.page ?? 1, snippet: query, start: 0, end: 0, rect: j.rect });
     } catch {
       /* citation may not have a literal match */
     }
@@ -102,10 +115,12 @@ export function ChatPanel({
             {messages.length === 0 ? (
               <div className="chat-empty">
                 <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
-                  Ask anything about this document. Answers cite the source — click a citation to jump to it on the PDF.
+                  {scope === "collection"
+                    ? "Ask across every document in this collection. Each answer cites the source document — click it to open."
+                    : "Ask anything about this document. Answers cite the source — click a citation to jump to it on the PDF."}
                 </p>
                 <div className="chat-suggest">
-                  {SUGGESTIONS.map((s) => (
+                  {(scope === "collection" ? COLLECTION_SUGGESTIONS : DOC_SUGGESTIONS).map((s) => (
                     <button key={s} type="button" className="chat-chip" onClick={() => void send(s)}>
                       {s}
                     </button>
@@ -120,8 +135,8 @@ export function ChatPanel({
                     <div className="chat-cites">
                       <span className="muted" style={{ fontSize: 11 }}>Sources:</span>
                       {m.citations.map((c) => (
-                        <button key={c.n} type="button" className="chat-cite" title={c.text} onClick={() => void jumpTo(c.text)}>
-                          ¶{c.n} ↗
+                        <button key={c.n} type="button" className="chat-cite" title={c.text} onClick={() => void jumpTo(c)}>
+                          {c.docTitle ? `${c.docTitle} ↗` : `¶${c.n} ↗`}
                         </button>
                       ))}
                       {m.provider ? <span className="muted" style={{ fontSize: 10 }}>· {m.provider}</span> : null}

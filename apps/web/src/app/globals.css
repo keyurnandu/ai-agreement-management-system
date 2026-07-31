@@ -2155,6 +2155,57 @@ button.source-link:hover .pill {
   font-size: 11px;
 }
 
+/* ── Documents / collections tree ──────────────────────── */
+.hierarchy-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 3px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  transition: background 0.12s, border-color 0.12s;
+}
+.hierarchy-row:hover {
+  background: var(--panel);
+  border-color: var(--border);
+}
+.hierarchy-toggle {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10px;
+  width: 18px;
+  flex: none;
+  padding: 0;
+}
+.hierarchy-toggle-spacer { width: 18px; flex: none; display: inline-block; }
+.hierarchy-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.hierarchy-row:hover .hierarchy-actions,
+.hierarchy-actions:focus-within { opacity: 1; }
+.hierarchy-actions .btn { padding: 3px 9px; font-size: 12px; }
+/* keep primary collection actions always visible */
+.hierarchy-actions .always { opacity: 1; }
+.doc-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+.doc-icon.file { background: var(--accent-soft); color: var(--accent); }
+.doc-icon.folder { background: color-mix(in srgb, var(--amber) 18%, transparent); color: var(--amber); }
+.doc-row-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
+
 /* ── AI chat panel ─────────────────────────────────────── */
 .chat-overlay {
   position: fixed;
