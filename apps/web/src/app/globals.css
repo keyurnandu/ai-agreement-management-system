@@ -2197,6 +2197,39 @@ button.source-link:hover .pill {
   margin-top: 16px;
   max-width: 560px;
 }
+.assistant-steps {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 6px;
+  max-width: 90%;
+}
+.assistant-step {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+}
+.assistant-step-check {
+  color: var(--green);
+  font-weight: 700;
+  flex: none;
+}
+.assistant-step-tool {
+  font-weight: 600;
+  color: var(--text);
+  flex: none;
+}
+.assistant-step-result {
+  color: var(--muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .assistant-confirm {
   margin-top: 6px;
   padding: 10px 12px;

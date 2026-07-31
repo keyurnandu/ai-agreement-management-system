@@ -5,7 +5,17 @@ import { useEffect, useRef, useState } from "react";
 
 type LinkT = { href: string; label: string };
 type Proposal = { tool: string; dealId?: string; title?: string; summary: string };
-type Msg = { role: "user" | "assistant"; text: string; links?: LinkT[]; proposal?: Proposal };
+type StepT = { tool: string; result: string };
+type Msg = { role: "user" | "assistant"; text: string; links?: LinkT[]; proposal?: Proposal; steps?: StepT[] };
+
+const TOOL_LABEL: Record<string, string> = {
+  find: "Searched deals",
+  run_compliance: "Ran compliance",
+  resolve_issues: "Resolved issues",
+  create_collection: "Created collection",
+  move_document: "Moved document",
+  answer: "Looked it up",
+};
 
 const SUGGESTIONS = [
   "Which deals are at risk?",
@@ -40,7 +50,7 @@ export function AssistantChat() {
         body: JSON.stringify({ message: q }),
       });
       const j = (await r.json()) as Msg & { reply?: string };
-      setMessages((m) => [...m, { role: "assistant", text: j.reply ?? "(no reply)", links: j.links, proposal: j.proposal }]);
+      setMessages((m) => [...m, { role: "assistant", text: j.reply ?? "(no reply)", links: j.links, proposal: j.proposal, steps: j.steps }]);
     } catch {
       setMessages((m) => [...m, { role: "assistant", text: "Sorry — that request failed." }]);
     } finally {
@@ -87,6 +97,17 @@ export function AssistantChat() {
         ) : (
           messages.map((m, i) => (
             <div key={i} className={`chat-msg ${m.role}`}>
+              {m.steps && m.steps.length ? (
+                <div className="assistant-steps">
+                  {m.steps.map((s, si) => (
+                    <div className="assistant-step" key={si}>
+                      <span className="assistant-step-check">✓</span>
+                      <span className="assistant-step-tool">{TOOL_LABEL[s.tool] ?? s.tool}</span>
+                      <span className="assistant-step-result">{s.result}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               <div className="chat-bubble">{m.text}</div>
               {m.links && m.links.length ? (
                 <div className="chat-cites">

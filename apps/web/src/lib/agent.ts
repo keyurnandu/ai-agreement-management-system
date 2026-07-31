@@ -1,40 +1,37 @@
 import { prisma } from "@/lib/db";
 import { intelligence } from "@/lib/services/client";
-import { runComplianceCheck, dealStatusLabel, canAccessDeal } from "@/lib/procurement";
+import { runComplianceCheck, canAccessDeal } from "@/lib/procurement";
 import { answerAboutPortfolio } from "@/lib/portfolio-qa";
 import { answerAboutDocument } from "@/lib/document-qa";
 import { roleAtLeast } from "@/lib/rbac";
 
 export type Actor = { id: string; role: string; email?: string | null };
 
-type DealLite = {
-  id: string;
-  commercialId: string | null;
-  title: string;
-  status: string;
-  direction: string;
-  documentId: string | null;
-};
+type DealLite = { id: string; commercialId: string | null; title: string; status: string; direction: string; documentId: string | null };
+type DocLite = { id: string; commercialId: string | null; title: string; kind: string; collectionParentId: string | null };
+type Step = { tool: string; result: string };
 
 export type AssistantResult = {
   reply: string;
   tool: string;
-  /** A confirmation the UI must show before the action runs. */
+  steps?: Step[];
   proposal?: { tool: string; dealId?: string; title?: string; summary: string };
-  /** Links the assistant surfaced (deals it acted on / referenced). */
   links?: { href: string; label: string }[];
 };
 
+const MAX_STEPS = 6;
 const CONFIRM_TOOLS = new Set(["send_for_signature", "approve_deal"]);
 
 const TOOL_CATALOG = `
-- answer: Answer a question about the portfolio or a specific deal/contract. args: { dealRef?: string, question: string }
+- find: List deals matching a filter, to decide what to act on next. args: { filter?: "at_risk"|"expiring"|"all", direction?: "sales"|"procurement" }
 - run_compliance: Run the compliance rule-pack check on a deal. args: { dealRef: string }
 - resolve_issues: Resolve every open review issue on a deal. args: { dealRef: string }
 - create_collection: Create a new document collection (folder). args: { title: string }
+- move_document: Move a document into a collection. args: { docRef: string, collectionRef: string }
+- answer: Answer a question about the portfolio or a specific deal (TERMINAL — ends the task). args: { dealRef?: string, question: string }
 - approve_deal: Approve a deal's document (needs 0 open issues). args: { dealRef: string }  [CONFIRM]
-- send_for_signature: Approve + start signing so the agreement goes to signers. args: { dealRef: string }  [CONFIRM]
-- none: Nothing to do / ask the user to clarify. args: {}
+- send_for_signature: Approve + start signing. args: { dealRef: string }  [CONFIRM]
+- done: The task is complete. args: {}  (put the final summary in "say")
 `;
 
 function extractJson(text: string): Record<string, unknown> | null {
@@ -46,7 +43,6 @@ function extractJson(text: string): Record<string, unknown> | null {
     return null;
   }
 }
-
 function resolveDeal(deals: DealLite[], ref?: string): DealLite | null {
   if (!ref) return null;
   const r = ref.trim().toLowerCase();
@@ -56,30 +52,57 @@ function resolveDeal(deals: DealLite[], ref?: string): DealLite | null {
     null
   );
 }
-
+function resolveDoc(docs: DocLite[], ref?: string): DocLite | null {
+  if (!ref) return null;
+  const r = ref.trim().toLowerCase();
+  return docs.find((d) => d.kind === "FILE" && (d.commercialId?.toLowerCase() === r || d.title.toLowerCase().includes(r))) ?? null;
+}
+function resolveCollection(docs: DocLite[], ref?: string): DocLite | null {
+  if (!ref) return null;
+  const r = ref.trim().toLowerCase();
+  return docs.find((d) => d.kind === "COLLECTION" && (d.commercialId?.toLowerCase() === r || d.title.toLowerCase().includes(r))) ?? null;
+}
 function guessDirection(q: string): "ORG_SELLING" | "ORG_BUYING" {
   return /vendor|procure|purchas|buy|supplier/i.test(q) ? "ORG_BUYING" : "ORG_SELLING";
 }
+const dealLink = (d: DealLite) => ({ href: `/deals/${d.id}`, label: d.commercialId ?? d.title });
 
-/** Plan a single tool call from the user's message. */
-async function plan(message: string, deals: DealLite[]) {
-  const catalog = deals
+/** Ask the LLM for the next single tool given the task and prior step results. */
+async function planNext(message: string, deals: DealLite[], docs: DocLite[], steps: Step[]) {
+  const dealCat = deals
     .slice(0, 50)
     .map((d) => `${d.commercialId ?? d.id} — ${d.title} [${d.status}, ${d.direction === "ORG_BUYING" ? "procurement" : "sales"}]`)
     .join("\n");
+  const collectionCat = docs.filter((d) => d.kind === "COLLECTION").slice(0, 20).map((d) => `- ${d.title}`).join("\n");
+  const fileCat = docs.filter((d) => d.kind === "FILE").slice(0, 30).map((d) => `- ${d.title}`).join("\n");
+  const done = steps.length
+    ? "STEPS DONE:\n" + steps.map((s, i) => `${i + 1}. ${s.tool}: ${s.result.replace(/\n/g, " ").slice(0, 160)}`).join("\n")
+    : "STEPS DONE: (none yet)";
   const system =
-    "You are ContractIQ's operations assistant. Pick exactly ONE tool to fulfil the user's request and reply with ONLY a JSON object " +
-    '{"tool": <name>, "args": {...}, "say": <one short first-person sentence>}. ' +
-    "Resolve any deal reference to its short ID (e.g. POR-3) using the deal list. If the message is just a question, use the answer tool. " +
-    "Tools:\n" +
+    "You are ContractIQ's operations assistant running a possibly multi-step task. " +
+    "Given the user's request and the results of steps already done, choose the NEXT single tool. " +
+    'Reply with ONLY JSON {"tool": <name>, "args": {...}, "say": <one short first-person sentence>}. ' +
+    'When the request is fully handled, reply {"tool":"done","say":<final summary of what you did>}. ' +
+    "Never repeat a step already done, and never create a collection that already exists. " +
+    "Resolve deal/document/collection references to names from the lists below. Tools:\n" +
     TOOL_CATALOG;
-  const prompt = `DEALS:\n${catalog || "(none)"}\n\nUSER: ${message}\n\nJSON:`;
+  const prompt =
+    `DEALS:\n${dealCat || "(none)"}\n\n` +
+    `COLLECTIONS:\n${collectionCat || "(none)"}\n\n` +
+    `DOCUMENTS:\n${fileCat || "(none)"}\n\n` +
+    `USER REQUEST: ${message}\n\n${done}\n\nNext JSON:`;
   const { text } = await intelligence.complete(prompt, system, 300);
-  const parsed = extractJson(text);
-  return parsed;
+  return extractJson(text);
 }
 
-/** Run one assistant turn: plan a tool, then execute (safe) or propose (confirm). */
+async function openIssueCounts(dealIds: string[]): Promise<Map<string, number>> {
+  const m = new Map<string, number>();
+  if (!dealIds.length) return m;
+  const rows = await prisma.reviewIssue.findMany({ where: { dealId: { in: dealIds }, status: "OPEN" }, select: { dealId: true } });
+  for (const r of rows) m.set(r.dealId, (m.get(r.dealId) ?? 0) + 1);
+  return m;
+}
+
 export async function runAssistant(message: string, actor: Actor): Promise<AssistantResult> {
   const where = roleAtLeast(actor.role, "MANAGER") ? {} : { ownerId: actor.id };
   const deals = (await prisma.deal.findMany({
@@ -88,86 +111,133 @@ export async function runAssistant(message: string, actor: Actor): Promise<Assis
     orderBy: { updatedAt: "desc" },
     take: 100,
   })) as DealLite[];
+  const docs = (await prisma.document.findMany({
+    where,
+    select: { id: true, commercialId: true, title: true, kind: true, collectionParentId: true },
+    orderBy: { updatedAt: "desc" },
+    take: 150,
+  })) as DocLite[];
+  const issueCounts = await openIssueCounts(deals.map((d) => d.id));
 
-  const parsed = await plan(message, deals);
-  const tool = String(parsed?.tool ?? "answer");
-  const args = (parsed?.args ?? {}) as Record<string, string>;
-  const say = typeof parsed?.say === "string" ? parsed.say : "";
+  const steps: Step[] = [];
+  const links: { href: string; label: string }[] = [];
+  let finalReply = "";
 
-  const deal = () => resolveDeal(deals, args.dealRef);
-  const dealLink = (d: DealLite) => ({ href: `/deals/${d.id}`, label: d.commercialId ?? d.title });
+  for (let i = 0; i < MAX_STEPS; i++) {
+    const plan = await planNext(message, deals, docs, steps);
+    const tool = String(plan?.tool ?? "done");
+    const args = (plan?.args ?? {}) as Record<string, string>;
+    const say = typeof plan?.say === "string" ? plan.say : "";
 
-  // ── Confirmation-required tools: propose, don't execute ──────────────────
-  if (CONFIRM_TOOLS.has(tool)) {
-    const d = deal();
-    if (!d) return { reply: `I couldn't find that deal. Which deal did you mean?`, tool };
-    const summary =
-      tool === "send_for_signature"
-        ? `Approve “${d.commercialId ?? d.title}” and send it for e-signature`
-        : `Approve “${d.commercialId ?? d.title}”`;
-    return {
-      reply: say || `I can ${summary.toLowerCase()}. Confirm to proceed.`,
-      tool,
-      proposal: { tool, dealId: d.id, title: d.commercialId ?? d.title, summary },
-      links: [dealLink(d)],
-    };
-  }
+    if (tool === "done" || tool === "none") {
+      finalReply = say || (steps.length ? "Done." : "I'm not sure how to help with that — try asking about a deal or the portfolio.");
+      break;
+    }
 
-  // ── Safe tools: execute now ──────────────────────────────────────────────
-  switch (tool) {
-    case "run_compliance": {
-      const d = deal();
-      if (!d) return { reply: "Which deal should I run compliance on?", tool };
-      if (!(await canAccessDeal(actor, d.id))) return { reply: "You don't have access to that deal.", tool };
-      const issues = await runComplianceCheck(d.id, actor.id);
-      const lines = issues.slice(0, 8).map((i) => `• [${i.severity}] ${i.title}`).join("\n");
+    // Confirmation-required → stop and surface the proposal (with steps so far).
+    if (CONFIRM_TOOLS.has(tool)) {
+      const d = resolveDeal(deals, args.dealRef);
+      if (!d) {
+        finalReply = "Which deal did you mean?";
+        break;
+      }
+      const summary = tool === "send_for_signature" ? `Approve “${d.commercialId ?? d.title}” and send it for e-signature` : `Approve “${d.commercialId ?? d.title}”`;
       return {
-        reply: issues.length
-          ? `Ran compliance on ${d.commercialId ?? d.title} — ${issues.length} finding${issues.length === 1 ? "" : "s"}:\n${lines}`
-          : `Ran compliance on ${d.commercialId ?? d.title} — no issues. It's clean.`,
+        reply: say || `${summary}?`,
         tool,
+        steps,
+        proposal: { tool, dealId: d.id, title: d.commercialId ?? d.title, summary },
         links: [dealLink(d)],
       };
     }
-    case "resolve_issues": {
-      const d = deal();
-      if (!d) return { reply: "Which deal's issues should I resolve?", tool };
-      if (!(await canAccessDeal(actor, d.id))) return { reply: "You don't have access to that deal.", tool };
-      const open = await prisma.reviewIssue.findMany({ where: { dealId: d.id, status: "OPEN" }, select: { id: true } });
-      if (!open.length) return { reply: `${d.commercialId ?? d.title} has no open issues.`, tool, links: [dealLink(d)] };
-      await prisma.reviewIssue.updateMany({
-        where: { id: { in: open.map((i) => i.id) } },
-        data: { status: "RESOLVED", resolvedAt: new Date() },
-      });
-      const stillOpen = await prisma.reviewIssue.count({ where: { dealId: d.id, status: "OPEN" } });
-      const cur = await prisma.deal.findUnique({ where: { id: d.id }, select: { status: true } });
-      if (cur && ["ISSUES_OPEN", "VENDOR_SUBMITTED", "UNDER_REVIEW"].includes(cur.status)) {
-        await prisma.deal.update({ where: { id: d.id }, data: { status: stillOpen ? "ISSUES_OPEN" : "UNDER_REVIEW" } });
-      }
-      return { reply: `Resolved ${open.length} open issue${open.length === 1 ? "" : "s"} on ${d.commercialId ?? d.title}.`, tool, links: [dealLink(d)] };
-    }
-    case "create_collection": {
-      const title = (args.title ?? "").trim();
-      if (!title) return { reply: "What should I name the collection?", tool };
-      if (!roleAtLeast(actor.role, "EDITOR")) return { reply: "You need editor access to create collections.", tool };
-      const type = await prisma.commercialRecordType.findFirst({ where: { key: "dcol" }, select: { id: true, prefix: true } });
-      const doc = await prisma.document.create({
-        data: { title, kind: "COLLECTION", commercialTypeId: type?.id, ownerId: actor.id },
-      });
-      return { reply: `Created the collection “${title}”.`, tool, links: [{ href: "/documents", label: "Open documents" }] };
-    }
-    case "answer":
-    default: {
+
+    // Terminal answer.
+    if (tool === "answer") {
       const question = args.question || message;
-      const d = deal();
-      if (d?.documentId) {
-        const res = await answerAboutDocument(d.documentId, question);
-        return { reply: res.answer, tool: "answer", links: [dealLink(d)] };
-      }
-      const res = await answerAboutPortfolio(guessDirection(question), question, roleAtLeast(actor.role, "MANAGER") ? undefined : actor.id);
-      return { reply: res.answer, tool: "answer" };
+      const d = resolveDeal(deals, args.dealRef);
+      const res = d?.documentId
+        ? await answerAboutDocument(d.documentId, question)
+        : await answerAboutPortfolio(guessDirection(question), question, roleAtLeast(actor.role, "MANAGER") ? undefined : actor.id);
+      if (d) links.push(dealLink(d));
+      finalReply = res.answer;
+      break;
     }
+
+    // Safe, non-terminal tools.
+    const { result, link } = await execSafe(tool, args, { deals, docs, issueCounts, actor });
+    steps.push({ tool, result });
+    if (link) links.push(link);
   }
+
+  if (!finalReply) finalReply = steps.length ? "Done — see the steps above." : "I couldn't complete that.";
+  return { reply: finalReply, tool: "multi", steps, links: dedupeLinks(links) };
+}
+
+function dedupeLinks(links: { href: string; label: string }[]) {
+  const seen = new Set<string>();
+  return links.filter((l) => (seen.has(l.href) ? false : (seen.add(l.href), true))).slice(0, 8);
+}
+
+async function execSafe(
+  tool: string,
+  args: Record<string, string>,
+  ctx: { deals: DealLite[]; docs: DocLite[]; issueCounts: Map<string, number>; actor: Actor },
+): Promise<{ result: string; link?: { href: string; label: string } }> {
+  const { deals, docs, issueCounts, actor } = ctx;
+
+  if (tool === "find") {
+    const filter = (args.filter ?? "all").toLowerCase();
+    let rows = deals;
+    if (args.direction) rows = rows.filter((d) => d.direction === (/(proc|buy|vendor)/.test(args.direction!.toLowerCase()) ? "ORG_BUYING" : "ORG_SELLING"));
+    if (filter === "at_risk") rows = rows.filter((d) => (issueCounts.get(d.id) ?? 0) > 0 || ["ISSUES_OPEN", "VENDOR_SUBMITTED"].includes(d.status));
+    const list = rows.slice(0, 10).map((d) => `${d.commercialId ?? d.id} (${d.status}${issueCounts.get(d.id) ? `, ${issueCounts.get(d.id)} open issues` : ""})`).join("; ");
+    return { result: rows.length ? `Found ${rows.length}: ${list}` : "No matching deals." };
+  }
+
+  if (tool === "run_compliance") {
+    const d = resolveDeal(deals, args.dealRef);
+    if (!d) return { result: "Deal not found." };
+    if (!(await canAccessDeal(actor, d.id))) return { result: "No access to that deal." };
+    const issues = await runComplianceCheck(d.id, actor.id);
+    issueCounts.set(d.id, issues.length);
+    return { result: issues.length ? `${d.commercialId}: ${issues.length} findings (${issues.map((x) => x.severity).join(",")})` : `${d.commercialId}: clean`, link: dealLink(d) };
+  }
+
+  if (tool === "resolve_issues") {
+    const d = resolveDeal(deals, args.dealRef);
+    if (!d) return { result: "Deal not found." };
+    if (!(await canAccessDeal(actor, d.id))) return { result: "No access to that deal." };
+    const open = await prisma.reviewIssue.findMany({ where: { dealId: d.id, status: "OPEN" }, select: { id: true } });
+    if (!open.length) return { result: `${d.commercialId}: no open issues`, link: dealLink(d) };
+    await prisma.reviewIssue.updateMany({ where: { id: { in: open.map((i) => i.id) } }, data: { status: "RESOLVED", resolvedAt: new Date() } });
+    issueCounts.set(d.id, 0);
+    const cur = await prisma.deal.findUnique({ where: { id: d.id }, select: { status: true } });
+    if (cur && ["ISSUES_OPEN", "VENDOR_SUBMITTED", "UNDER_REVIEW"].includes(cur.status)) {
+      await prisma.deal.update({ where: { id: d.id }, data: { status: "UNDER_REVIEW" } });
+    }
+    return { result: `${d.commercialId}: resolved ${open.length} issues`, link: dealLink(d) };
+  }
+
+  if (tool === "create_collection") {
+    const title = (args.title ?? "").trim();
+    if (!title) return { result: "No collection name given." };
+    if (!roleAtLeast(actor.role, "EDITOR")) return { result: "No editor access." };
+    const type = await prisma.commercialRecordType.findFirst({ where: { key: "dcol" }, select: { id: true } });
+    await prisma.document.create({ data: { title, kind: "COLLECTION", commercialTypeId: type?.id, ownerId: actor.id } });
+    return { result: `Created collection “${title}”`, link: { href: "/documents", label: "Documents" } };
+  }
+
+  if (tool === "move_document") {
+    const doc = resolveDoc(docs, args.docRef);
+    const col = resolveCollection(docs, args.collectionRef);
+    if (!doc) return { result: "Document not found." };
+    if (!col) return { result: "Collection not found." };
+    await prisma.document.update({ where: { id: doc.id }, data: { collectionParentId: col.id } });
+    doc.collectionParentId = col.id;
+    return { result: `Moved “${doc.title}” into “${col.title}”`, link: { href: "/documents", label: "Documents" } };
+  }
+
+  return { result: `Unknown tool: ${tool}` };
 }
 
 /** Execute a previously-proposed confirmation action. */
@@ -179,24 +249,17 @@ export async function executeAssistantAction(tool: string, dealId: string, actor
   const link = { href: `/deals/${d.id}`, label };
 
   const open = await prisma.reviewIssue.count({ where: { dealId: d.id, status: "OPEN" } });
-  if (open > 0) {
-    return { reply: `Can't approve ${label} yet — ${open} open issue${open === 1 ? "" : "s"} must be resolved first.`, tool, links: [link] };
-  }
+  if (open > 0) return { reply: `Can't approve ${label} yet — ${open} open issue${open === 1 ? "" : "s"} must be resolved first.`, tool, links: [link] };
 
   if (tool === "approve_deal") {
     await prisma.deal.update({ where: { id: d.id }, data: { status: "APPROVED", approvedAt: new Date() } });
     return { reply: `Approved ${label}. You can now start signing.`, tool, links: [link] };
   }
   if (tool === "send_for_signature") {
-    // Approve if needed, then hand off to the signing setup on the deal.
     if (!["APPROVED", "SIGNING"].includes(d.status)) {
       await prisma.deal.update({ where: { id: d.id }, data: { status: "APPROVED", approvedAt: new Date() } });
     }
-    return {
-      reply: `${label} is approved and ready to sign. Open it and use “Start signing” to place fields and send to signers.`,
-      tool,
-      links: [link],
-    };
+    return { reply: `${label} is approved and ready to sign. Open it and use “Start signing” to place fields and send to signers.`, tool, links: [link] };
   }
   return { reply: "Unknown action.", tool };
 }
