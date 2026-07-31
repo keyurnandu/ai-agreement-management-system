@@ -232,7 +232,7 @@ export function DealToolbar({ dealId }: { dealId: string }) {
             {deal.status === "DRAFT" ? "Send to counterparty" : "Resend portal invite"}
           </button>
         ) : null}
-        {["WITH_VENDOR", "VENDOR_SUBMITTED", "UNDER_REVIEW", "ISSUES_OPEN"].includes(deal.status) ? (
+        {["DRAFT", "WITH_VENDOR", "VENDOR_SUBMITTED", "UNDER_REVIEW", "ISSUES_OPEN"].includes(deal.status) ? (
           <button
             className="btn secondary"
             disabled={!!busyAction}

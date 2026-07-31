@@ -225,9 +225,12 @@ export async function runComplianceCheck(dealId: string, actorId: string) {
     }
   }
 
+  // Running compliance on a draft (a pre-send self-check) keeps it a draft;
+  // once it's in negotiation, surface issues (ISSUES_OPEN) or clear to review.
+  const nextStatus = deal.status === "DRAFT" ? "DRAFT" : issues.length ? "ISSUES_OPEN" : "UNDER_REVIEW";
   await prisma.deal.update({
     where: { id: dealId },
-    data: { status: issues.length ? "ISSUES_OPEN" : "UNDER_REVIEW" },
+    data: { status: nextStatus },
   });
 
   return issues;
