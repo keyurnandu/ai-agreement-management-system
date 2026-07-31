@@ -50,9 +50,27 @@ class AIProvider(ABC):
         }
 
     async def extract(self, text: str, attributes: list[dict]) -> list[dict]:
-        """LLM extraction with RAG-style chunk selection for large documents."""
+        """LLM extraction with RAG-style chunk selection; attributes run concurrently."""
+        import asyncio
         from ..core.embeddings import get_embedder
-        from ..core.extract_ctx import build_extraction_context, prepare_document_chunks
+        from ..core.extract_ctx import prepare_document_chunks
+
+        embedder = get_embedder()
+        chunks = prepare_document_chunks(text)
+        chunk_vectors = await embedder.embed(chunks) if chunks else None
+
+        # Attributes are independent — extract them concurrently (bounded) so a
+        # document with ~10 fields isn't 10x the latency of one.
+        sem = asyncio.Semaphore(6)
+
+        async def run(a: dict) -> dict:
+            async with sem:
+                return await self._extract_one(a, text, chunks, chunk_vectors, embedder)
+
+        return list(await asyncio.gather(*(run(a) for a in attributes)))
+
+    async def _extract_one(self, a: dict, text: str, chunks, chunk_vectors, embedder) -> dict:
+        from ..core.extract_ctx import build_extraction_context
         from ..core.extract_parse import extract_max_tokens, normalize_extract_value, wants_structured_output
         from ..core.extract_mapreduce import should_map_reduce
 
@@ -60,59 +78,44 @@ class AIProvider(ABC):
             "You are a contract data extractor. Extract the requested field from the contract text. "
             "Respond with ONLY the value, no explanation. If absent, respond 'N/A'."
         )
-        embedder = get_embedder()
-        chunks = prepare_document_chunks(text)
-        chunk_vectors = await embedder.embed(chunks) if chunks else None
+        if should_map_reduce(text, a):
+            value = await self._extract_structured_mapreduce(a, text)
+            return {"key": a.get("key"), "value": value, "confidence": None}
 
-        results: list[dict] = []
-        for a in attributes:
-            if should_map_reduce(text, a):
-                value = await self._extract_structured_mapreduce(a, text)
-                results.append({"key": a.get("key"), "value": value, "confidence": None})
-                continue
+        mode = (a.get("mode") or "STRICT").upper()
+        inc = a.get("inclusion") or []
+        exc = a.get("exclusion") or []
+        ctx = await build_extraction_context(text, a, chunks=chunks, chunk_vectors=chunk_vectors, embedder=embedder)
 
-            mode = (a.get("mode") or "STRICT").upper()
-            inc = a.get("inclusion") or []
-            exc = a.get("exclusion") or []
-            ctx = await build_extraction_context(
-                text,
-                a,
-                chunks=chunks,
-                chunk_vectors=chunk_vectors,
-                embedder=embedder,
+        if wants_structured_output(a):
+            value = await self._extract_structured_json(a, ctx, mode, inc, exc, bool(chunks), len(text))
+            return {"key": a.get("key"), "value": value, "confidence": None}
+
+        parts = [
+            f"Field: {a.get('label') or a.get('key')}",
+            f"Type: {a.get('type', 'TEXT')}",
+            "Mode: " + (
+                "STRICT — return the value verbatim from the text"
+                if mode == "STRICT"
+                else "FLEXIBLE — infer/normalize even if not stated verbatim"
+            ),
+            f"Instruction: {a.get('prompt', '')}",
+        ]
+        if inc:
+            parts.append("Examples of correct values: " + "; ".join(str(x) for x in inc))
+        if exc:
+            parts.append("Do NOT return values like: " + "; ".join(str(x) for x in exc))
+        if chunks:
+            from ..core.extract_ctx import TOP_K
+
+            parts.append(
+                f"(Note: showing up to {TOP_K} most relevant sections from a "
+                f"{len(text):,}-character document.)"
             )
-
-            if wants_structured_output(a):
-                value = await self._extract_structured_json(a, ctx, mode, inc, exc, bool(chunks), len(text))
-                results.append({"key": a.get("key"), "value": value, "confidence": None})
-                continue
-
-            parts = [
-                f"Field: {a.get('label') or a.get('key')}",
-                f"Type: {a.get('type', 'TEXT')}",
-                "Mode: " + (
-                    "STRICT — return the value verbatim from the text"
-                    if mode == "STRICT"
-                    else "FLEXIBLE — infer/normalize even if not stated verbatim"
-                ),
-                f"Instruction: {a.get('prompt', '')}",
-            ]
-            if inc:
-                parts.append("Examples of correct values: " + "; ".join(str(x) for x in inc))
-            if exc:
-                parts.append("Do NOT return values like: " + "; ".join(str(x) for x in exc))
-            if chunks:
-                from ..core.extract_ctx import TOP_K
-
-                parts.append(
-                    f"(Note: showing up to {TOP_K} most relevant sections from a "
-                    f"{len(text):,}-character document.)"
-                )
-            parts.append("\nCONTRACT TEXT:\n" + ctx)
-            max_out = extract_max_tokens(a)
-            c = await self.complete("\n".join(parts), system, max_tokens=max_out)
-            results.append({"key": a.get("key"), "value": normalize_extract_value(a, c.text or ""), "confidence": None})
-        return results
+        parts.append("\nCONTRACT TEXT:\n" + ctx)
+        max_out = extract_max_tokens(a)
+        c = await self.complete("\n".join(parts), system, max_tokens=max_out)
+        return {"key": a.get("key"), "value": normalize_extract_value(a, c.text or ""), "confidence": None}
 
     async def _extract_structured_json(
         self,

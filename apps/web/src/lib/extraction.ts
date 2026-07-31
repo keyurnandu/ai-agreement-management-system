@@ -90,10 +90,17 @@ export async function runExtraction(documentId: string, keys?: string[]): Promis
   );
   const byKey = new Map(values.map((v) => [v.key, v]));
 
-  for (const d of defs) {
-    const v = byKey.get(d.key);
-    const loc = await enrichSource(v?.value ?? null, findAttributeSource(v?.value ?? null, pages));
-    const replaceAll = Boolean(keys?.length);
+  // Locate each value on the PDF concurrently (each is a pdf-engine round-trip).
+  const located = await Promise.all(
+    defs.map(async (d) => {
+      const v = byKey.get(d.key);
+      const loc = await enrichSource(v?.value ?? null, findAttributeSource(v?.value ?? null, pages));
+      return { d, v, loc };
+    }),
+  );
+
+  const replaceAll = Boolean(keys?.length);
+  for (const { d, v, loc } of located) {
     await prisma.attributeValue.deleteMany({
       where: { definitionId: d.id, documentId, ...(replaceAll ? {} : { method: "AI" }) },
     });
