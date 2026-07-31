@@ -101,11 +101,22 @@ export function DealToolbar({ dealId }: { dealId: string }) {
   const [deal, setDeal] = useState<Deal | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
     const r = await fetch(`/api/deals/${dealId}`);
     if (r.ok) setDeal(((await r.json()) as { deal: Deal }).deal);
   }, [dealId]);
+
+  async function copyPortalLink(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      /* clipboard blocked — the link is still visible to copy manually */
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   useEffect(() => {
     void load();
@@ -144,7 +155,11 @@ export function DealToolbar({ dealId }: { dealId: string }) {
       notifyDealRefresh();
       router.refresh();
       if (j.portalUrl) {
-        setMsg(j.resent ? "Portal invite resent." : "Sent to counterparty.");
+        setMsg(
+          j.resent
+            ? "Portal invite resent — share the link below."
+            : "Sent to counterparty — copy the portal link below to share it.",
+        );
       }
       if (j.agreementId) {
         setMsg("Signing started — send for signature below when ready.");
@@ -244,6 +259,29 @@ export function DealToolbar({ dealId }: { dealId: string }) {
         ) : null}
         <HelpLink style={{ alignSelf: "center" }} />
       </div>
+
+      {canSendPortal && deal.vendorPortalUrl ? (
+        <div className="portal-link">
+          <div className="portal-link-head">
+            <span className="portal-link-label">Counterparty portal link</span>
+            <button
+              type="button"
+              className="btn secondary"
+              style={{ padding: "4px 10px", fontSize: 12 }}
+              onClick={() => void copyPortalLink(deal.vendorPortalUrl)}
+            >
+              {copied ? "✓ Copied" : "Copy link"}
+            </button>
+          </div>
+          <a className="portal-link-url" href={deal.vendorPortalUrl} target="_blank" rel="noreferrer">
+            {deal.vendorPortalUrl}
+          </a>
+          <p className="portal-link-hint">
+            No login needed — {deal.vendorName ?? deal.vendorEmail} opens this to review, raise issues, edit clauses, or upload
+            their paper. Open it yourself in a private window to preview the counterparty view.
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }
