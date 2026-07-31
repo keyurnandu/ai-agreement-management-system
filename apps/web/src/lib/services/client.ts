@@ -317,6 +317,12 @@ export const intelligence = {
     }),
   analyze: (text: string) =>
     call<AnalyzeResult>(env.INTELLIGENCE_URL, "/ai/analyze", { method: "POST", body: { text }, scope: "analyze" }),
+  complete: (prompt: string, system?: string, maxTokens = 512) =>
+    call<{ provider: string; model: string; text: string }>(env.INTELLIGENCE_URL, "/ai/complete", {
+      method: "POST",
+      body: { prompt, system, max_tokens: maxTokens },
+      scope: "complete",
+    }),
   ask: (text: string, question: string, docId?: string, history?: { role: string; content: string }[]) =>
     call<AskResult>(env.INTELLIGENCE_URL, "/ai/ask", {
       method: "POST",

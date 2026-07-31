@@ -2155,6 +2155,57 @@ button.source-link:hover .pill {
   font-size: 11px;
 }
 
+/* ── Assistant (agentic chat) ──────────────────────────── */
+.assistant-shell {
+  display: flex;
+  flex-direction: column;
+  height: min(70vh, 640px);
+  padding: 0;
+  overflow: hidden;
+  margin-top: 16px;
+}
+.assistant-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.assistant-empty {
+  margin: auto;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.assistant-hero {
+  font-size: 34px;
+  width: 60px;
+  height: 60px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: var(--accent-soft);
+  margin-bottom: 6px;
+}
+.assistant-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 16px;
+  max-width: 560px;
+}
+.assistant-confirm {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--amber) 45%, var(--border));
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
+  border-radius: 10px;
+  max-width: 90%;
+}
+
 /* ── Agreements pipeline ───────────────────────────────── */
 .agreements-toolbar {
   display: flex;
